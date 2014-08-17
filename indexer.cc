@@ -1,30 +1,25 @@
-#include "clang/Frontend/FrontendPluginRegistry.h"
-#include "clang/AST/AST.h"
-#include "clang/AST/ASTConsumer.h"
-#include <stdio.h>
+#include "indexer.h"
+#include "clang/Frontend/FrontendAction.h"
+#include "clang/Tooling/Tooling.h"
 
-class IndexConsumer : public clang::ASTConsumer {
- public:
-};
-
-class IndexAction : public clang::PluginASTAction {
+class IndexAction : public clang::ASTFrontendAction {
  protected:
-  virtual clang::ASTConsumer *CreateASTConsumer(clang::CompilerInstance &CI,
-                                         clang::StringRef InFile)
+  virtual clang::ASTConsumer *CreateASTConsumer(
+      clang::CompilerInstance &CI,
+      clang::StringRef InFile) override
   {
     printf("CreateAST\n");
     return new IndexConsumer();
   }
-
- public:
-  virtual bool ParseArgs(const clang::CompilerInstance &CI,
-                         const std::vector<std::string> &arg)
-  {
-    printf("ParseArgs %zd\n", arg.size());
-    return true;
-  }
 };
 
-static clang::FrontendPluginRegistry::Add<IndexAction>
-X("index", "index");
-
+int main(int argc, char* argv[])
+{
+  std::vector<std::string> commands;
+  for (int i = 0; i < argc; ++i)
+    commands.push_back(argv[i]);
+  llvm::IntrusiveRefCntPtr<clang::FileManager> files(
+      new clang::FileManager(clang::FileSystemOptions()));
+  clang::tooling::ToolInvocation tool(commands, new IndexAction, files.getPtr());
+  tool.run();
+}
