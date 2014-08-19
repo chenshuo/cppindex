@@ -9,9 +9,17 @@
 class Visitor : public clang::RecursiveASTVisitor<Visitor> {
   typedef clang::RecursiveASTVisitor<Visitor> base;
 public:
+  // bool shouldVisitImplicitCode() const { return true; }
+
   bool VisitDecl(const clang::Decl* decl)
   {
-    printf("%s\n", decl->getDeclKindName());
+    printf("decl %s\n", decl->getDeclKindName());
+    return true;
+  }
+
+  bool VisitCallExpr(clang::CallExpr *expr)
+  {
+    printf("CallExpr %p\n", expr->getCalleeDecl());
     return true;
   }
 };

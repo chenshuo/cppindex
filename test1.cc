@@ -1,6 +1,12 @@
 
+struct User
+{
+};
+
 int foo();
 
-int bar() {
+int bar()
+{
+  User u;
   return foo();
 }
