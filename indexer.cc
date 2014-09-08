@@ -1,17 +1,5 @@
 #include "indexer.h"
-#include "clang/Frontend/FrontendAction.h"
 #include "clang/Tooling/Tooling.h"
-
-class IndexAction : public clang::ASTFrontendAction {
- protected:
-  virtual clang::ASTConsumer *CreateASTConsumer(
-      clang::CompilerInstance &CI,
-      clang::StringRef InFile) override
-  {
-    printf("CreateAST\n");
-    return new IndexConsumer();
-  }
-};
 
 int main(int argc, char* argv[])
 {
