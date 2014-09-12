@@ -1,0 +1,40 @@
+diff --git a/tools/clang/lib/Driver/ToolChain.cpp b/tools/clang/lib/Driver/ToolChain.cpp
+index 36aae33..a60896d 100644
+--- a/tools/clang/lib/Driver/ToolChain.cpp
++++ b/tools/clang/lib/Driver/ToolChain.cpp
+@@ -358,7 +358,18 @@ ToolChain::CXXStdlibType ToolChain::GetCXXStdlibType(const ArgList &Args) const{
+                                             ArgStringList &CC1Args,
+                                             const Twine &Path) {
+   CC1Args.push_back("-internal-isystem");
+-  CC1Args.push_back(DriverArgs.MakeArgString(Path));
++  std::string Dir = Path.str();
++  char* realPath = ::realpath(Dir.c_str(), NULL);
++  if (realPath)
++  {
++    CC1Args.push_back(DriverArgs.MakeArgString(realPath));
++    ::free(realPath);
++  }
++  else
++  {
++    // printf("%s %s\n", __FUNCTION__, Dir.c_str());
++    CC1Args.push_back(DriverArgs.MakeArgString(Dir));
++  }
+ }
+ 
+ /// \brief Utility function to add a system include directory with extern "C"
+diff --git a/tools/clang/lib/Driver/ToolChains.cpp b/tools/clang/lib/Driver/ToolChains.cpp
+index 4688335..b60b174 100644
+--- a/tools/clang/lib/Driver/ToolChains.cpp
++++ b/tools/clang/lib/Driver/ToolChains.cpp
+@@ -2592,8 +2592,9 @@ void Linux::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
+     addSystemInclude(DriverArgs, CC1Args, SysRoot + "/usr/local/include");
+ 
+   if (!DriverArgs.hasArg(options::OPT_nobuiltininc)) {
+-    SmallString<128> P(D.ResourceDir);
+-    llvm::sys::path::append(P, "include");
++    // SmallString<128> P(D.ResourceDir);
++    SmallString<128> P("/usr/lib/clang");
++    llvm::sys::path::append(P, CLANG_VERSION_STRING, "include");
+     addSystemInclude(DriverArgs, CC1Args, P.str());
+   }
+ 
