@@ -115,18 +115,36 @@ class IndexPP : public clang::PPCallbacks
     // printf("FileSkipped %s\n", preprocessor_.getSpelling(FilenameTok).c_str());
   }
 
-  virtual void InclusionDirective(SourceLocation HashLoc,
-                                  const Token &IncludeTok,
-                                  StringRef FileName,
-                                  bool IsAngled,
-                                  CharSourceRange FilenameRange,
-                                  const FileEntry *File,
-                                  StringRef SearchPath,
-                                  StringRef RelativePath,
-                                  const Module *Imported)
+  virtual void InclusionDirective(SourceLocation hashLoc,
+                                  const Token &includeTok,
+                                  StringRef filename,
+                                  bool isAngled,
+                                  CharSourceRange filenameRange,
+                                  const FileEntry *file,
+                                  StringRef searchPath,
+                                  StringRef relativePath,
+                                  const Module *imported)
   {
-    //printf("InclusionDirective\n");
-    LOG_TRACE;
+    bool invalid = true;
+    unsigned lineno = sourceManager_.getSpellingLineNumber(hashLoc, &invalid);
+    if (invalid)
+      return;
+    std::string currentFile = filePath(sourceManager_, hashLoc);
+    std::string includedFile = file->getName();
+    LOG_DEBUG << currentFile << ":" << lineno << " -> " << includedFile;
+    LOG_INFO << filename.str();
+    if (filenameRange.getBegin().isMacroID())
+    {
+      LOG_WARN << "#include " << filename.str() << " was a macro";
+      return;
+    }
+
+    // skip '"' or '<'
+    SourceLocation filenameStart = filenameRange.getBegin().getLocWithOffset(1);
+    SourceLocation filenameEnd = filenameRange.getBegin().getLocWithOffset(-1);
+    invalid = true;
+
+    //const char* filename
   }
 
   virtual void EndOfMainFile()

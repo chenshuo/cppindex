@@ -31,7 +31,7 @@ std::map<std::string, std::string> getBuiltinHeaders(const char* path)
     std::string content;
     if (muduo::FileUtil::readFile(it->path(), 10*1024*1024, &content) == 0)
     {
-      LOG_DEBUG << "Add " << header << " " << content.size();
+      // LOG_TRACE << "Add " << header << " " << content.size();
       headers[header] = content;
     }
   }
