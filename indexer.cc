@@ -43,14 +43,17 @@ int main(int argc, char* argv[])
   std::vector<std::string> commands;
   for (int i = 0; i < argc; ++i)
     commands.push_back(argv[i]);
+  commands.push_back("-fno-spell-checking");
   llvm::IntrusiveRefCntPtr<clang::FileManager> files(
       new clang::FileManager(clang::FileSystemOptions()));
-  clang::tooling::ToolInvocation tool(commands, new IndexAction(true), files.getPtr());
-  auto headers = getBuiltinHeaders("/home/schen"
-                                   "/llvm-3.4.2.src/build/lib/clang/3.4.2/include");
+  clang::tooling::ToolInvocation tool(commands, new indexer::IndexAction(true), files.getPtr());
+  auto headers = getBuiltinHeaders(LLVM_PATH "/build/lib/clang/3.4.2/include");
+  LOG_INFO << "Adding " << headers.size() << " clang builtin headers";
   for (const auto& it : headers)
   {
     tool.mapVirtualFile(it.first, it.second);
   }
+
   tool.run();
+  google::protobuf::ShutdownProtobufLibrary();
 }

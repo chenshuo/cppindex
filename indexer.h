@@ -1,4 +1,7 @@
+#include "record.pb.h"
+
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/MD5.h"
 
 #include "clang/AST/AST.h"
 #include "clang/AST/ASTConsumer.h"
@@ -14,8 +17,6 @@
 #include "muduo/base/Logging.h"
 
 #include <stdio.h>
-
-#define override
 
 using namespace clang;
 
@@ -61,6 +62,9 @@ std::string filePath(const clang::SourceManager& sourceManager, clang::SourceLoc
 
   return "<unknown>";
 }
+
+namespace indexer
+{
 
 class IndexPP : public clang::PPCallbacks
 {
@@ -125,56 +129,80 @@ class IndexPP : public clang::PPCallbacks
                                   StringRef relativePath,
                                   const Module *imported)
   {
+    if (file == nullptr)
+      return;
+
+    std::string currentFile = filePath(sourceManager_, hashLoc);
+    // FIXME: skip if currentFile has been indexed.
+
     bool invalid = true;
     unsigned lineno = sourceManager_.getSpellingLineNumber(hashLoc, &invalid);
     if (invalid)
       return;
-    std::string currentFile = filePath(sourceManager_, hashLoc);
-    std::string includedFile = file->getName();
-    LOG_DEBUG << currentFile << ":" << lineno << " -> " << includedFile;
-    LOG_INFO << filename.str();
+
+    std::string includedFile = file ? file->getName() : filename.str();
+    // LOG_DEBUG << currentFile << ":" << lineno << " -> " << includedFile;
+    Preprocess& pp = records_[currentFile];
+
+    auto* inc = pp.add_includes();
+    inc->set_included_file(file->getName());
+    inc->set_lineno(lineno);
+
     if (filenameRange.getBegin().isMacroID())
     {
-      LOG_WARN << "#include " << filename.str() << " was a macro";
-      return;
+      // LOG_WARN << currentFile << ":" << lineno << "#include " << filename.str() << " was a macro";
+      inc->set_macro(true);
+        const clang::SourceRange range(includeTok.getLocation(),
+                                       includeTok.getLocation().getLocWithOffset(includeTok.getLength()));
+        sourceRangeToRange(range, inc->mutable_range());
     }
-
-    // skip '"' or '<'
-    SourceLocation filenameStart = filenameRange.getBegin().getLocWithOffset(1);
-    SourceLocation filenameEnd = filenameRange.getBegin().getLocWithOffset(-1);
-    invalid = true;
-
-    //const char* filename
+    else
+    {
+      // skip '"' or '<'
+      SourceLocation filenameStart = filenameRange.getBegin().getLocWithOffset(1);
+      SourceLocation filenameEnd = filenameRange.getEnd().getLocWithOffset(-1);
+      int filenameLength = 0;
+      invalid = true;
+      const char* filenameStr = sourceManager_.getCharacterData(filenameStart, &invalid);
+      if (!invalid
+          && sourceManager_.isInSameSLocAddrSpace(filenameStart, filenameEnd, &filenameLength)
+          && filenameLength == filename.size()
+          && filename == StringRef(filenameStr, filenameLength))
+      {
+        // LOG_INFO << "good";
+        const clang::SourceRange range(filenameStart, filenameEnd);
+        sourceRangeToRange(range, inc->mutable_range());
+      }
+      else
+      {
+        LOG_WARN << filename.str() << " != " << StringRef(filenameStr, filenameLength).str();
+      }
+    }
   }
 
   virtual void EndOfMainFile()
   {
-    LOG_DEBUG;
+    LOG_DEBUG << filePath(sourceManager_, sourceManager_.getMainFileID());
     if (db_ == nullptr)
       return;
-    for (const auto& it : files_)
+
+    saveSources();
+
+    // TODO: dedup
+    // FIXME: save only when different
+    std::string content;
+    for (const auto& it : records_)
     {
-      // printf("%s\n", it.first.c_str());
-      std::string uri = "src:";
-      if (it.first[0] != '/')
+      std::string uri = "prep:" + it.first;
+      // LOG_INFO << it.first << ":\n" << it.second.DebugString();
+      if (it.second.SerializeToString(&content))
       {
-        uri += '/';
-      }
-      uri += it.first;
-      std::string content;
-      leveldb::Status s = db_->Get(leveldb::ReadOptions(), uri, &content);
-      if (s.ok())
-      {
-        if (content != it.second)
-        {
-          LOG_WARN << "Different content for " << uri;
-          // printf("<<<<<\n%s\n=====\n%s\n>>>>>\n", content.c_str(), it.second.c_str());
-        }
-      }
-      // else
-      {
-        s = db_->Put(leveldb::WriteOptions(), uri, it.second);
+        leveldb::Status s = db_->Put(leveldb::WriteOptions(), uri, content);
         assert(s.ok());
+      }
+      else
+      {
+        assert(false && "Preprocess::Serialize");
       }
     }
     db_ = nullptr;
@@ -202,7 +230,6 @@ class IndexPP : public clang::PPCallbacks
       //const auto first = sourceManager_.getDecomposedSpellingLoc(start);
       //const auto last = sourceManager_.getDecomposedSpellingLoc(range.getEnd());
       //printf("%u %u\n", first, last);
-
     }
   }
 
@@ -246,6 +273,36 @@ class IndexPP : public clang::PPCallbacks
     // printf("%s\n", __FUNCTION__);
   }
 
+  void sourceRangeToRange(const clang::SourceRange& sourceRange, Range* range)
+  {
+    sourceLocationToLocation(sourceRange.getBegin(), range->mutable_begin());
+    sourceLocationToLocation(sourceRange.getEnd(), range->mutable_end());
+  }
+
+  void sourceLocationToLocation(clang::SourceLocation sloc, Location* loc)
+  {
+    assert(sloc.isFileID());
+    auto decomposed = sourceManager_.getDecomposedLoc(sloc);
+    loc->set_offset(decomposed.second);
+    bool invalid = true;
+    loc->set_lineno(sourceManager_.getLineNumber(decomposed.first, decomposed.second, &invalid));
+    assert(!invalid && "getLineNumber");
+    loc->set_column(sourceManager_.getColumnNumber(decomposed.first, decomposed.second, &invalid));
+    assert(!invalid && "getColumnNumber");
+  }
+
+  typedef llvm::SmallString<32> MD5String;
+  MD5String md5String(const std::string& text)
+  {
+    MD5String str;
+    llvm::MD5 md5;
+    md5.update(text);
+    llvm::MD5::MD5Result result;
+    md5.final(result);
+    llvm::MD5::stringifyResult(result, str);
+    return str;
+  }
+
  private:
   bool getFileContent(clang::SourceLocation location, std::string* content)
   {
@@ -269,10 +326,68 @@ class IndexPP : public clang::PPCallbacks
     return false;
   }
 
+  void saveSources()
+  {
+    std::string content;
+
+    // read md5 from db
+    leveldb::Status s = db_->Get(leveldb::ReadOptions(), kSrcmd5, &content);
+    Digests digests;
+    std::map<std::string, MD5String> md5s;
+    if (s.ok() && digests.ParseFromString(content))
+    {
+      for (auto it : digests.digests())
+      {
+        md5s[it.filename()] = it.md5();
+      }
+    }
+
+    // update/save source file when md5 is different
+    for (const auto& src : files_)
+    {
+      MD5String md5 = md5String(src.second);
+      MD5String& origmd5 = md5s[src.first];
+      if (origmd5 != md5)
+      {
+        std::string uri = "src:" + src.first;
+        if (!origmd5.empty())
+        {
+          LOG_WARN << "Different content for " << uri;
+        }
+        else
+        {
+          LOG_INFO << "Add " << uri;
+        }
+        origmd5 = md5;
+        s = db_->Put(leveldb::WriteOptions(), uri, src.second);
+        assert(s.ok());
+      }
+    }
+
+    // update digests
+    digests.Clear();
+    for (const auto& d : md5s)
+    {
+      auto* digest = digests.add_digests();
+      digest->set_filename(d.first);
+      llvm::StringRef str = d.second.str();
+      digest->set_md5(str.data(), str.size());
+    }
+    if (!digests.SerializeToString(&content))
+    {
+      assert(false && "Digests::Serialize");
+    }
+    s = db_->Put(leveldb::WriteOptions(), kSrcmd5, content);
+    assert(s.ok());
+  }
+
   const clang::Preprocessor& preprocessor_;
   clang::SourceManager& sourceManager_;
   std::map<std::string, std::string> files_;
+  std::map<std::string, Preprocess> records_;
   leveldb::DB* db_;
+
+  static constexpr const char* kSrcmd5 = "srcmd5:";
 };
 
 class Visitor : public clang::RecursiveASTVisitor<Visitor>
@@ -327,7 +442,10 @@ public:
 class IndexConsumer : public clang::ASTConsumer
 {
  public:
-  IndexConsumer()
+  IndexConsumer(clang::CompilerInstance& compiler, leveldb::DB* db)
+    : preprocessor_(compiler.getPreprocessor()),
+      sourceManager_(compiler.getSourceManager()),
+      db_(db)
   {
     LOG_DEBUG;
   }
@@ -346,6 +464,9 @@ class IndexConsumer : public clang::ASTConsumer
   }
 
  private:
+  const clang::Preprocessor& preprocessor_;
+  clang::SourceManager& sourceManager_;
+  leveldb::DB* db_;
 };
 
 class IndexAction : public clang::PluginASTAction
@@ -353,12 +474,12 @@ class IndexAction : public clang::PluginASTAction
  protected:
   virtual clang::ASTConsumer *CreateASTConsumer(
       clang::CompilerInstance& compiler,
-      clang::StringRef InFile) override
+      clang::StringRef inputFile) override
   {
-    printf("CreateAST %s\n", InFile.str().c_str());
+    printf("CreateAST %s\n", inputFile.str().c_str());
     auto* pp = new IndexPP(compiler, db_.get());
     compiler.getPreprocessor().addPPCallbacks(pp);
-    return new IndexConsumer();
+    return new IndexConsumer(compiler, db_.get());
     //auto* consumer = new PrintConsumer(CI.getPreprocessor(), CI.getSourceManager(), CI.getLangOpts());
     //pp->setRewriter(consumer->getRewriter());
     //return consumer;
@@ -376,8 +497,14 @@ class IndexAction : public clang::PluginASTAction
       leveldb::Options options;
       options.create_if_missing = true;
       leveldb::Status status = leveldb::DB::Open(options, "testdb", &db);
-      assert(status.ok());
-      db_.reset(db);
+      if (status.ok())
+      {
+        db_.reset(db);
+      }
+      else
+      {
+        LOG_ERROR << "Unable to open leveldb";
+      }
     }
   }
 
@@ -396,3 +523,5 @@ class IndexAction : public clang::PluginASTAction
  private:
   std::unique_ptr<leveldb::DB> db_;
 };
+
+}

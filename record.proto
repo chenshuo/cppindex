@@ -1,0 +1,39 @@
+package indexer;
+
+////////////////////////////////////////////////////////////
+
+message Digests {
+  message Digest {
+    optional string filename = 1;
+    optional string md5 = 2;  // 32-byte hex string
+  }
+  repeated Digest digests = 1;
+}
+
+////////////////////////////////////////////////////////////
+
+message Preprocess {
+  optional string filename = 1;
+  repeated Inclusion includes = 2;
+}
+
+message Inclusion {
+  optional string included_file = 1;
+  optional uint32 lineno = 2;
+  optional Range range = 3;
+  optional bool macro = 4 [default = false];
+}
+
+////////////////////////////////////////////////////////////
+
+message Range {
+  optional Location begin = 1;
+  optional Location end = 2;
+}
+
+message Location
+{
+  optional int32 offset = 1 [default = -1];
+  optional int32 lineno = 2 [default = -1]; // 1-based
+  optional int32 column = 3 [default = -1];
+}
