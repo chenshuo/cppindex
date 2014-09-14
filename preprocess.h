@@ -65,7 +65,6 @@ class IndexPP : public clang::PPCallbacks
       return;
 
     std::string currentFile = filePath(hashLoc);
-    // FIXME: skip if currentFile has been indexed.
 
     bool invalid = true;
     unsigned lineno = sourceManager_.getSpellingLineNumber(hashLoc, &invalid);
@@ -74,19 +73,16 @@ class IndexPP : public clang::PPCallbacks
 
     std::string includedFile = file ? file->getName() : filename.str();
     // LOG_DEBUG << currentFile << ":" << lineno << " -> " << includedFile;
-    Preprocess& pp = records_[currentFile];
+    Inclusion& inc = inclusions_[currentFile];
 
-    auto* inc = pp.add_includes();
-    inc->set_included_file(file->getName());
-    inc->set_lineno(lineno);
-
-    if (filenameRange.getBegin().isMacroID())
+    proto::Range range;
+    bool isMacro = filenameRange.getBegin().isMacroID();
+    if (isMacro)
     {
-      // LOG_WARN << currentFile << ":" << lineno << "#include " << filename.str() << " was a macro";
-      inc->set_macro(true);
-        const clang::SourceRange range(includeTok.getLocation(),
-                                       includeTok.getLocation().getLocWithOffset(includeTok.getLength()));
-        sourceRangeToRange(range, inc->mutable_range());
+      LOG_WARN << currentFile << ":" << lineno << "#include " << filename.str() << " was a macro";
+      const clang::SourceRange srcRange(includeTok.getLocation(),
+                                     includeTok.getLocation().getLocWithOffset(includeTok.getLength()));
+      sourceRangeToRange(srcRange, &range);
     }
     else
     {
@@ -102,13 +98,18 @@ class IndexPP : public clang::PPCallbacks
           && filename == clang::StringRef(filenameStr, filenameLength))
       {
         // LOG_INFO << "good";
-        const clang::SourceRange range(filenameStart, filenameEnd);
-        sourceRangeToRange(range, inc->mutable_range());
+        const clang::SourceRange srcRange(filenameStart, filenameEnd);
+        sourceRangeToRange(srcRange, &range);
       }
       else
       {
         LOG_WARN << filename.str() << " != " << clang::StringRef(filenameStr, filenameLength).str();
       }
+    }
+
+    if (!inc.add(lineno, includedFile, isMacro, &range))
+    {
+      // LOG_WARN << "#include changed at " << currentFile << ":" << lineno << " -> " << includedFile;
     }
   }
 
@@ -120,14 +121,32 @@ class IndexPP : public clang::PPCallbacks
 
     saveSources();
 
-    // TODO: dedup
     // FIXME: save only when different
     std::string content;
-    for (const auto& it : records_)
+    proto::Preprocess pp;
+    for (const auto& it : files_)
     {
-      std::string uri = "prep:" + it.first;
-      // LOG_INFO << it.first << ":\n" << it.second.DebugString();
-      if (it.second.SerializeToString(&content))
+      const std::string& filename = it.first;
+      std::string uri = "prep:" + filename;
+      // leveldb::Status s = db_->Get(leveldb::ReadOptions(), uri, &content);
+
+      // LOG_INFO << it.first << ":\n" << pp.DebugString();
+      pp.Clear();
+      pp.set_filename(filename);
+      bool hasContent = false;
+
+      auto inc = inclusions_.find(filename);
+      if (inc != inclusions_.end())
+      {
+        hasContent = true;
+        inc->second.fill(&pp);
+      }
+
+      if (!hasContent)
+      {
+        continue;
+      }
+      if (pp.SerializeToString(&content))
       {
         leveldb::Status s = db_->Put(leveldb::WriteOptions(), uri, content);
         assert(s.ok());
@@ -227,13 +246,13 @@ class IndexPP : public clang::PPCallbacks
     return "<unknown>";
   }
 
-  void sourceRangeToRange(const clang::SourceRange& sourceRange, Range* range) const
+  void sourceRangeToRange(const clang::SourceRange& sourceRange, proto::Range* range) const
   {
     sourceLocationToLocation(sourceRange.getBegin(), range->mutable_begin());
     sourceLocationToLocation(sourceRange.getEnd(), range->mutable_end());
   }
 
-  void sourceLocationToLocation(clang::SourceLocation sloc, Location* loc) const
+  void sourceLocationToLocation(clang::SourceLocation sloc, proto::Location* loc) const
   {
     assert(sloc.isFileID());
     auto decomposed = sourceManager_.getDecomposedLoc(sloc);
@@ -286,7 +305,7 @@ class IndexPP : public clang::PPCallbacks
 
     // read md5 from db
     leveldb::Status s = db_->Get(leveldb::ReadOptions(), kSrcmd5, &content);
-    Digests digests;
+    proto::Digests digests;
     std::map<std::string, MD5String> md5s;
     if (s.ok() && digests.ParseFromString(content))
     {
@@ -335,11 +354,54 @@ class IndexPP : public clang::PPCallbacks
     assert(s.ok());
   }
 
+  // Record include's for a source file
+  struct Inclusion
+  {
+    // return true if added a new item or same item.
+    bool add(unsigned lineno, std::string& includedFile, bool isMacro, proto::Range* range)
+    {
+      std::unique_ptr<proto::Inclusion>& inc = includes_[lineno];
+      if (inc)
+      {
+        if (inc->included_file() != includedFile)
+        {
+          // TODO: check other
+          // FIXME: update ?
+          inc->set_changed(true);
+          return false;
+        }
+      }
+      else
+      {
+        inc.reset(new proto::Inclusion);
+        inc->set_included_file(includedFile);
+        inc->set_lineno(lineno);
+        if (isMacro)
+          inc->set_macro(isMacro);
+        inc->mutable_range()->Swap(range);
+      }
+      return true;
+    }
+
+    void fill(proto::Preprocess* pp)
+    {
+      for (auto& it : includes_)
+      {
+        pp->mutable_includes()->AddAllocated(it.second.release());
+      }
+    }
+
+    std::map<unsigned, std::unique_ptr<proto::Inclusion>> includes_;
+  };
+
   const clang::Preprocessor& preprocessor_;
   clang::SourceManager& sourceManager_;
-  std::map<std::string, std::string> files_;
-  std::map<std::string, Preprocess> records_;
   leveldb::DB* db_;
+
+  // map from filename to file content
+  std::map<std::string, std::string> files_;
+  // map from filename to inclusion
+  std::map<std::string, Inclusion> inclusions_;
 
   static constexpr const char* kSrcmd5 = "srcmd5:";
 };

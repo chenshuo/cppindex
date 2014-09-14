@@ -16,7 +16,7 @@ void print(leveldb::Slice key, const std::string& content)
 {
   if (key.starts_with("srcmd5:"))
   {
-    parseAndPrint<indexer::Digests>(content);
+    parseAndPrint<indexer::proto::Digests>(content);
   }
   else if (key.starts_with("src:"))
   {
@@ -24,7 +24,7 @@ void print(leveldb::Slice key, const std::string& content)
   }
   else if (key.starts_with("prep:"))
   {
-    parseAndPrint<indexer::Preprocess>(content);
+    parseAndPrint<indexer::proto::Preprocess>(content);
   }
   else
   {

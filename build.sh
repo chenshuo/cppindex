@@ -21,6 +21,7 @@ LIBS="-lclangTooling -lclangRewriteCore -lclangFrontend -lclangSerialization \
  -lLLVMBitReader -lLLVMMCParser -lLLVMMC -lLLVMTransformUtils \
  -lLLVMOption -lLLVMCore -lLLVMSupport "
 LIBS=
+CC=/home/schen/download/llvm-3.4.2.src/build/bin/clang++
 CC=g++
 
 $CC -std=c++11 -fno-rtti -g -Wall indexer.cc record.pb.o $CPP_ARGS \

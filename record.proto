@@ -1,4 +1,4 @@
-package indexer;
+package indexer.proto;
 
 ////////////////////////////////////////////////////////////
 
@@ -19,9 +19,10 @@ message Preprocess {
 
 message Inclusion {
   optional string included_file = 1;
-  optional uint32 lineno = 2;
+  optional int32 lineno = 2 [default = -1]; // 1-based
   optional Range range = 3;
   optional bool macro = 4 [default = false];
+  optional bool changed = 5 [default = false]; // include a macro which changes
 }
 
 ////////////////////////////////////////////////////////////
