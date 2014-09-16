@@ -32,7 +32,10 @@ class IndexPP : public clang::PPCallbacks
         auto it = files_.find(file_changed);
         if (it == files_.end())
         {
+          // a new file
           files_[file_changed] = content;
+          clang::FileID fileId = sourceManager_.getFileID(location);
+          findComments(fileId);
         }
         else if (it->second != content)
         {
@@ -318,9 +321,8 @@ class IndexPP : public clang::PPCallbacks
     return false;
   }
 
-  void findComments()
+  void findComments(clang::FileID fid)
   {
-    clang::FileID fid = sourceManager_.getMainFileID();
     const llvm::MemoryBuffer *FromFile = sourceManager_.getBuffer(fid);
     clang::Lexer L(fid, FromFile, sourceManager_, compiler_.getLangOpts());
     L.SetCommentRetentionState(true);
