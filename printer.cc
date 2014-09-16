@@ -41,9 +41,37 @@ class Formatter
     std::string filename = srcuri.ToString();
     formatPreprocess(filename, &rb);
 
-    escapeHtml(text, &rb);
-    rb.InsertTextBefore(0, "<html><head><title>" + filename + "</title></head><body><pre>");
-    rb.InsertTextAfter(text.size(), "</pre></body></html>");
+    int numlines = escapeHtml(text, &rb);
+    std::vector<std::string> headers;
+    headers.push_back("<html><head><title>");
+    headers.push_back(filename);
+    headers.push_back("</title>");
+    headers.push_back(R"(<style>
+.lineno {
+display:block;
+font-family: monospace;
+text-align: right;
+}
+.macro {
+color:red;
+}
+:target {
+background-color: #eef ;
+padding: 1px 2px 1px 10px ;
+border: solid #caa 2px ;
+border-radius: 8px ;
+}</style>)");
+    headers.push_back("</head>\n<body><table style=\"border-spacing:10px 0px\"><tr><td>\n");
+    for (int i = 0; i < numlines; ++i)
+    {
+      char buf[256];
+      snprintf(buf, sizeof buf, "<span class=\"lineno\"><a name=\"L%d\">%d</a></span>\n", i+1, i+1);
+      headers.push_back(buf);
+    }
+    headers.push_back("</td>\n<td><pre>");
+    for (size_t i = 0; i < headers.size(); ++i)
+      rb.InsertTextBefore(0, headers[headers.size()-1-i]);
+    rb.InsertTextAfter(text.size(), "</pre></td></tr></table></body></html>");
     *html = rb.ToString();
     return getHtmlFilename(filename);;
   }
@@ -67,11 +95,25 @@ class Formatter
         rb->InsertTextAfter(inc.range().end().offset(), "</a>");
       }
     }
+    for (const auto& macro : pp.macros())
+    {
+      if (macro.reference())
+      {
+        rb->InsertTextBefore(macro.range().begin().offset(), makeHref(macro.ref_file(), macro.ref_lineno()));
+        rb->InsertTextAfter(macro.range().end().offset(), "</a>");
+      }
+    }
   }
 
-  std::string makeHref(const std::string& filename)
+  std::string makeHref(const std::string& filename, int lineno = 0)
   {
     std::string result = "<a href=\"" + getHtmlFilename(filename);
+    if (lineno > 0)
+    {
+      char buf[32];
+      snprintf(buf, sizeof buf, "#L%d", lineno);
+      result += buf;
+    }
     return result + "\">";
   }
 
@@ -80,15 +122,16 @@ class Formatter
     std::string result = srcfile;
     for (auto& ch : result)
     {
-      if (ch == '/' || ch == '.')
+      if (ch == '/' || ch == '.' || ch == '<' || ch == '>' || ch == '+')
         ch = '_';
     }
     result += ".html";
     return result;
   }
 
-  static void escapeHtml(leveldb::Slice text, clang::RewriteBuffer* rb)
+  static int escapeHtml(leveldb::Slice text, clang::RewriteBuffer* rb)
   {
+    int lines = 0;
     for (size_t i = 0; i < text.size(); ++i)
     {
       switch (text[i])
@@ -104,8 +147,14 @@ class Formatter
         case '&':
           rb->ReplaceText(i, 1, "&amp;");
           break;
+
+        case '\n':
+          ++lines;
+          break;
       }
     }
+    // FIXME: last line without EOL
+    return lines;
   }
 };
 
@@ -134,9 +183,7 @@ int main(int argc, char* argv[])
     {
       std::string html;
       std::string file = fmt.format(argv[1], &html);
-      printf("%s\n", file.c_str());
-      if (!file.empty())
-        save(file, html);
+      printf("%s\n%s\n", file.c_str(), html.c_str());
     }
     else
     {

@@ -15,6 +15,8 @@ message Digests {
 message Preprocess {
   optional string filename = 1;
   repeated Inclusion includes = 2;
+  repeated Macro macros = 3;
+  repeated Declarator declarators = 4;
 }
 
 message Inclusion {
@@ -23,6 +25,26 @@ message Inclusion {
   optional Range range = 3;
   optional bool macro = 4 [default = false];
   optional bool changed = 5 [default = false]; // include a macro which changes
+}
+
+message Macro {
+  optional string name = 1;
+  optional Range range = 2;
+  optional bool define = 3 [default = false];
+
+  optional bool reference = 4 [default = false];
+  optional string ref_file = 5;
+  optional int32 ref_lineno = 6;
+}
+
+message Declarator {
+  enum Type {
+    COMMENT = 1;
+    STRING = 2;
+    NUMBER = 3;
+  }
+  optional Range range = 1;
+  optional Type type = 2;
 }
 
 ////////////////////////////////////////////////////////////
