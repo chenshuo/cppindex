@@ -16,6 +16,8 @@
 
 #include "muduo/base/Logging.h"
 
+#include <unordered_map>
+
 #include <stdio.h>
 
 const char* kBuiltInFileName = "<built-in>";

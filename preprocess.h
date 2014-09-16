@@ -2,7 +2,8 @@ class IndexPP : public clang::PPCallbacks
 {
  public:
   IndexPP(clang::CompilerInstance& compiler, leveldb::DB* db)
-    : preprocessor_(compiler.getPreprocessor()),
+    : compiler_(compiler),
+      preprocessor_(compiler.getPreprocessor()),
       sourceManager_(compiler.getSourceManager()),
       db_(db)
   {
@@ -72,16 +73,17 @@ class IndexPP : public clang::PPCallbacks
       return;
 
     std::string includedFile = file ? file->getName() : filename.str();
-    // LOG_DEBUG << currentFile << ":" << lineno << " -> " << includedFile;
+    LOG_TRACE << currentFile << ":" << lineno << " -> " << includedFile;
     Inclusion& inc = inclusions_[currentFile];
 
     proto::Range range;
     bool isMacro = filenameRange.getBegin().isMacroID();
     if (isMacro)
     {
-      LOG_WARN << currentFile << ":" << lineno << "#include " << filename.str() << " was a macro";
-      const clang::SourceRange srcRange(includeTok.getLocation(),
-                                     includeTok.getLocation().getLocWithOffset(includeTok.getLength()));
+      // LOG_WARN << currentFile << ":" << lineno << "#include " << filename.str() << " was a macro";
+      auto start = includeTok.getLocation();
+      auto end = start.getLocWithOffset(includeTok.getLength());
+      const clang::SourceRange srcRange(start, end);
       sourceRangeToRange(srcRange, &range);
     }
     else
@@ -115,11 +117,24 @@ class IndexPP : public clang::PPCallbacks
 
   virtual void EndOfMainFile()
   {
-    LOG_DEBUG << filePath(sourceManager_.getMainFileID());
+    std::string mainFile = filePath(sourceManager_.getMainFileID());
+    LOG_INFO << __FUNCTION__ << " " << mainFile;
     if (db_ == nullptr)
       return;
 
-    saveSources();
+    clang::FileID fid = sourceManager_.getMainFileID();
+    const llvm::MemoryBuffer *FromFile = sourceManager_.getBuffer(fid);
+    clang::Lexer L(fid, FromFile, sourceManager_, compiler_.getLangOpts());
+    L.SetCommentRetentionState(true);
+    clang::Token rawTok;
+    do {
+      L.LexFromRawLexer(rawTok);
+      unsigned TokOffs = sourceManager_.getFileOffset(rawTok.getLocation());
+      unsigned TokLen = rawTok.getLength();
+      printf("off=%d len=%d kind=%s\n", TokOffs, TokLen, clang::tok::getTokenName(rawTok.getKind()));
+    } while (rawTok.isNot(clang::tok::eof));
+
+    saveSources(mainFile);
 
     // FIXME: save only when different
     std::string content;
@@ -163,13 +178,13 @@ class IndexPP : public clang::PPCallbacks
   /// macro invocation is found.
   virtual void MacroExpands(const clang::Token &MacroNameTok, const clang::MacroDirective *MD,
                             clang::SourceRange Range, const clang::MacroArgs *Args) {
-    // printf("%s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
+    printf("%s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
   }
 
   /// \brief Hook called whenever a macro definition is seen.
   virtual void MacroDefined(const clang::Token &MacroNameTok,
                             const clang::MacroDirective *MD) {
-    // printf("%s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
+    printf("%s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
     auto start = MacroNameTok.getLocation();
     clang::SourceRange range(start, start.getLocWithOffset(MacroNameTok.getLength()));
     if (range.getBegin().isMacroID())
@@ -299,7 +314,7 @@ class IndexPP : public clang::PPCallbacks
     return false;
   }
 
-  void saveSources()
+  void saveSources(const std::string& mainFile)
   {
     std::string content;
 
@@ -315,10 +330,12 @@ class IndexPP : public clang::PPCallbacks
       }
     }
 
+    std::map<std::string, MD5String> mymd5s;
     // update/save source file when md5 is different
     for (const auto& src : files_)
     {
       MD5String md5 = md5String(src.second);
+      mymd5s[src.first] = md5;
       MD5String& origmd5 = md5s[src.first];
       if (origmd5 != md5)
       {
@@ -352,6 +369,25 @@ class IndexPP : public clang::PPCallbacks
     }
     s = db_->Put(leveldb::WriteOptions(), kSrcmd5, content);
     assert(s.ok());
+
+    std::string uri = "main:" + mainFile;
+
+    // update main:
+    digests.Clear();
+    for (const auto& d : mymd5s)
+    {
+      auto* digest = digests.add_digests();
+      digest->set_filename(d.first);
+      llvm::StringRef str = d.second.str();
+      digest->set_md5(str.data(), str.size());
+    }
+    if (!digests.SerializeToString(&content))
+    {
+      assert(false && "Digests::Serialize");
+    }
+    s = db_->Put(leveldb::WriteOptions(), uri, content);
+    assert(s.ok());
+
   }
 
   // Record include's for a source file
@@ -394,14 +430,15 @@ class IndexPP : public clang::PPCallbacks
     std::map<unsigned, std::unique_ptr<proto::Inclusion>> includes_;
   };
 
+  clang::CompilerInstance& compiler_;
   const clang::Preprocessor& preprocessor_;
   clang::SourceManager& sourceManager_;
   leveldb::DB* db_;
 
   // map from filename to file content
-  std::map<std::string, std::string> files_;
+  std::unordered_map<std::string, std::string> files_;
   // map from filename to inclusion
-  std::map<std::string, Inclusion> inclusions_;
+  std::unordered_map<std::string, Inclusion> inclusions_;
 
   static constexpr const char* kSrcmd5 = "srcmd5:";
 };

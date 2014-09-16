@@ -14,7 +14,7 @@ void parseAndPrint(const std::string& content)
 
 void print(leveldb::Slice key, const std::string& content)
 {
-  if (key.starts_with("srcmd5:"))
+  if (key.starts_with("srcmd5:") || key.starts_with("main:"))
   {
     parseAndPrint<indexer::proto::Digests>(content);
   }
