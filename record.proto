@@ -34,7 +34,7 @@ message Macro {
 
   optional bool reference = 4 [default = false];
   optional string ref_file = 5;
-  optional int32 ref_lineno = 6;
+  optional int32 ref_lineno = 6 [default = -1];
 }
 
 message Declarator {
@@ -42,6 +42,7 @@ message Declarator {
     COMMENT = 1;
     STRING = 2;
     NUMBER = 3;
+    SKIPPED = 4;
   }
   optional Range range = 1;
   optional Type type = 2;

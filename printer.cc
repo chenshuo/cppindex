@@ -45,33 +45,18 @@ class Formatter
     std::vector<std::string> headers;
     headers.push_back("<html><head><title>");
     headers.push_back(filename);
-    headers.push_back("</title>");
-    headers.push_back(R"(<style>
-.lineno {
-display:block;
-font-family: monospace;
-text-align: right;
-}
-.macro {
-color:red;
-}
-:target {
-background-color: #eef ;
-padding: 1px 2px 1px 10px ;
-border: solid #caa 2px ;
-border-radius: 8px ;
-}</style>)");
+    headers.push_back(R"(</title><link rel="stylesheet" type="text/css" href="../source.css">)");
     headers.push_back("</head>\n<body><table style=\"border-spacing:10px 0px\"><tr><td>\n");
     for (int i = 0; i < numlines; ++i)
     {
       char buf[256];
-      snprintf(buf, sizeof buf, "<span class=\"lineno\"><a name=\"L%d\">%d</a></span>\n", i+1, i+1);
+      snprintf(buf, sizeof buf, R"(<span class="lineno"><a href="#L%d" name="L%d" tabindex="-1">%d</a></span>)", i+1, i+1, i+1);
       headers.push_back(buf);
     }
     headers.push_back("</td>\n<td><pre>");
     for (size_t i = 0; i < headers.size(); ++i)
       rb.InsertTextBefore(0, headers[headers.size()-1-i]);
-    rb.InsertTextAfter(text.size(), "</pre></td></tr></table></body></html>");
+    rb.InsertTextAfter(text.size(), "</pre></td></tr></table></body></html>\n");
     *html = rb.ToString();
     return getHtmlFilename(filename);;
   }
@@ -97,10 +82,21 @@ border-radius: 8px ;
     }
     for (const auto& macro : pp.macros())
     {
-      if (macro.reference())
+      if (macro.define())
       {
-        rb->InsertTextBefore(macro.range().begin().offset(), makeHref(macro.ref_file(), macro.ref_lineno()));
+        rb->InsertTextBefore(macro.range().begin().offset(), R"(<span class="macro-def">)");
+        rb->InsertTextAfter(macro.range().end().offset(), "</span>");
+      }
+      else if (macro.reference() && macro.ref_lineno() > 0)
+      {
+        rb->InsertTextBefore(macro.range().begin().offset(),
+                             makeHref(macro.ref_file(), macro.ref_lineno()));
         rb->InsertTextAfter(macro.range().end().offset(), "</a>");
+      }
+      else
+      {
+        rb->InsertTextBefore(macro.range().begin().offset(), R"(<span class="macro-use">)");
+        rb->InsertTextAfter(macro.range().end().offset(), "</span>");
       }
     }
   }
@@ -120,12 +116,19 @@ border-radius: 8px ;
   std::string getHtmlFilename(const std::string& srcfile)
   {
     std::string result = srcfile;
-    for (auto& ch : result)
+    if (!result.empty())
     {
-      if (ch == '/' || ch == '.' || ch == '<' || ch == '>' || ch == '+')
-        ch = '_';
+      for (auto& ch : result)
+      {
+        if (ch == '/' || ch == '.' || ch == '<' || ch == '>' || ch == '+')
+          ch = '_';
+      }
+      result += ".html";
     }
-    result += ".html";
+    else
+    {
+      result = "#";
+    }
     return result;
   }
 

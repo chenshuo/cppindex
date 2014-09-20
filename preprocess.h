@@ -172,28 +172,10 @@ class IndexPP : public clang::PPCallbacks
     db_ = nullptr;
   }
 
-  /// \brief Called by Preprocessor::HandleMacroExpandedIdentifier when a
-  /// macro invocation is found.
-  virtual void MacroExpands(const clang::Token &MacroNameTok, const clang::MacroDirective *MD,
-                            clang::SourceRange Range, const clang::MacroArgs *Args) {
-    auto start = MacroNameTok.getLocation();
-    if (start.isMacroID())
-    {
-      // printf("don't know %s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
-      return;
-    }
-
-    std::string filename = filePath(start);
-    clang::SourceRange range(start, start.getLocWithOffset(MacroNameTok.getLength()));
-    // printf("%s %s %p\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str(), MD);
-    macros_[filename].addReference(this, MacroNameTok, filename, range, MD);
-  }
-
   /// \brief Hook called whenever a macro definition is seen.
   virtual void MacroDefined(const clang::Token &MacroNameTok,
                             const clang::MacroDirective *MD)
   {
-    // printf("%s %s %p\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str(), MD);
     auto start = MacroNameTok.getLocation();
     if (start.isMacroID())
     {
@@ -206,36 +188,45 @@ class IndexPP : public clang::PPCallbacks
     macros_[filename].addDefine(this, MacroNameTok, filename, range);
   }
 
+  /// \brief Called by Preprocessor::HandleMacroExpandedIdentifier when a
+  /// macro invocation is found.
+  virtual void MacroExpands(const clang::Token& MacroNameTok, const clang::MacroDirective *MD,
+                            clang::SourceRange, const clang::MacroArgs *Args) {
+    macroUsed(MacroNameTok, MD);
+  }
+
   /// \brief Hook called whenever a macro \#undef is seen.
   ///
   /// MD is released immediately following this callback.
   virtual void MacroUndefined(const clang::Token &MacroNameTok,
                               const clang::MacroDirective *MD) {
-    // printf("%s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
+    macroUsed(MacroNameTok, MD);
   }
 
   /// \brief Hook called whenever the 'defined' operator is seen.
   /// \param MD The MacroDirective if the name was a macro, null otherwise.
-  virtual void Defined(const clang::Token &MacroNameTok, const clang::MacroDirective *MD,
-                       clang::SourceRange Range) {
-    // printf("%s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
-
+  void Defined(const clang::Token &MacroNameTok, const clang::MacroDirective *MD,
+               clang::SourceRange Range) override
+  {
+    macroUsed(MacroNameTok, MD);
   }
 
   // Called for #ifdef, checks for use of an existing macro definition.
   // Implements PPCallbacks::Ifdef.
   void Ifdef(clang::SourceLocation location,
              const clang::Token& MacroNameTok,
-             const clang::MacroDirective* macro) override {
-    // printf("%s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
+             const clang::MacroDirective* MD) override
+  {
+    macroUsed(MacroNameTok, MD);
   }
 
   // Called for #ifndef, checks for use of an existing macro definition.
   // Implements PPCallbacks::Ifndef.
   void Ifndef(clang::SourceLocation location,
               const clang::Token& MacroNameTok,
-              const clang::MacroDirective* macro) override {
-    // printf("%s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
+              const clang::MacroDirective* MD) override
+  {
+    macroUsed(MacroNameTok, MD);
   }
 
 
@@ -244,6 +235,7 @@ class IndexPP : public clang::PPCallbacks
   /// \#if/\#else directive and ends after the \#endif/\#else directive.
   virtual void SourceRangeSkipped(clang::SourceRange Range) {
     // printf("%s\n", __FUNCTION__);
+    // FIXME
   }
 
   std::string filePath(clang::FileID fileId) const
@@ -321,6 +313,22 @@ class IndexPP : public clang::PPCallbacks
     return false;
   }
 
+  void macroUsed(const clang::Token &MacroNameTok,
+                 const clang::MacroDirective *MD)
+  {
+    auto start = MacroNameTok.getLocation();
+    if (start.isMacroID())
+    {
+      // printf("don't know %s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
+      return;
+    }
+
+    std::string filename = filePath(start);
+    clang::SourceRange range(start, start.getLocWithOffset(MacroNameTok.getLength()));
+    // printf("%s %s %p\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str(), MD);
+    macros_[filename].addReference(this, MacroNameTok, filename, range, MD);
+  }
+
   void findComments(clang::FileID fid)
   {
     const llvm::MemoryBuffer *FromFile = sourceManager_.getBuffer(fid);
@@ -332,6 +340,9 @@ class IndexPP : public clang::PPCallbacks
       unsigned TokOffs = sourceManager_.getFileOffset(rawTok.getLocation());
       unsigned TokLen = rawTok.getLength();
       printf("off=%d len=%d kind=%s\n", TokOffs, TokLen, clang::tok::getTokenName(rawTok.getKind()));
+      // comments
+      // string literals
+      // preprocess directives
     } while (rawTok.isNot(clang::tok::eof));
   }
 
@@ -488,9 +499,8 @@ class IndexPP : public clang::PPCallbacks
       if (MD)
       {
         auto loc = MD->getLocation();
-        if (loc.isFileID())
+        if (!loc.isInvalid() && loc.isFileID())
         {
-          // FIXME: check error
           macro->set_ref_file(pp->filePath(loc));
           macro->set_ref_lineno(pp->sourceManager_.getSpellingLineNumber(loc));
         }

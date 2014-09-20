@@ -1,0 +1,18 @@
+.lineno {
+  display:block;
+  font-family: monospace;
+  text-align: right;
+}
+.macro-use {
+  color:red;
+}
+.macro-def {
+  color:blue;
+}
+
+:target {
+  background-color: #eef ;
+  padding: 1px 2px 1px 10px ;
+  border: solid #caa 2px ;
+  border-radius: 8px ;
+}

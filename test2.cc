@@ -14,4 +14,5 @@
 int main()
 {
   printf("hello, world %d\n", errno);
+  fflush(stdin);
 }
