@@ -20,19 +20,20 @@ message Preprocess {
 }
 
 message Inclusion {
-  optional string included_file = 1;
+  optional string included_file = 1;  // path of included file
   optional int32 lineno = 2 [default = -1]; // 1-based
-  optional Range range = 3;
-  optional bool macro = 4 [default = false];
+  optional Range range = 3;  // range of file name in #include directive
+  optional bool macro = 4 [default = false];  // include using macro
   optional bool changed = 5 [default = false]; // include a macro which changes
 }
 
 message Macro {
   optional string name = 1;
-  optional Range range = 2;
+  optional Range range = 2;  // range of the macro name token
   optional bool define = 3 [default = false];
-
   optional bool reference = 4 [default = false];
+
+  // when reference == true, ref_file and ref_lineno are usually defined, except for __has_feature etc.
   optional string ref_file = 5;
   optional int32 ref_lineno = 6 [default = -1];
 }
@@ -44,8 +45,8 @@ message Declarator {
     NUMBER = 3;
     SKIPPED = 4;
   }
-  optional Range range = 1;
-  optional Type type = 2;
+  optional Type type = 1;
+  optional Range range = 2;
 }
 
 ////////////////////////////////////////////////////////////

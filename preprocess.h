@@ -185,7 +185,7 @@ class IndexPP : public clang::PPCallbacks
 
     std::string filename = filePath(start);
     clang::SourceRange range(start, start.getLocWithOffset(MacroNameTok.getLength()));
-    macros_[filename].addDefine(this, MacroNameTok, filename, range);
+    macros_[filename].addMacro(this, MacroNameTok, filename, range);
   }
 
   /// \brief Called by Preprocessor::HandleMacroExpandedIdentifier when a
@@ -339,8 +339,10 @@ class IndexPP : public clang::PPCallbacks
       L.LexFromRawLexer(rawTok);
       unsigned TokOffs = sourceManager_.getFileOffset(rawTok.getLocation());
       unsigned TokLen = rawTok.getLength();
-      printf("off=%d len=%d kind=%s\n", TokOffs, TokLen, clang::tok::getTokenName(rawTok.getKind()));
       // comments
+      //if (rawTok.is(clang::tok::comment))
+      //  printf("off=%d len=%d kind=%s\n",
+      //         TokOffs, TokLen, clang::tok::getTokenName(rawTok.getKind()));
       // string literals
       // preprocess directives
     } while (rawTok.isNot(clang::tok::eof));
@@ -465,11 +467,11 @@ class IndexPP : public clang::PPCallbacks
 
   struct Macros
   {
-    proto::Macro* addDefine(IndexPP* pp,
-                            const clang::Token& macroNameTok,
-                            const std::string& filename,
-                            const clang::SourceRange& srcRange,
-                            bool define = true)
+    proto::Macro* addMacro(IndexPP* pp,
+                           const clang::Token& macroNameTok,
+                           const std::string& filename,
+                           const clang::SourceRange& srcRange,
+                           bool define = true)
     {
       unsigned offset = pp->sourceManager_.getDecomposedSpellingLoc(srcRange.getBegin()).second;
       auto& macro = macros_[offset];
@@ -494,7 +496,7 @@ class IndexPP : public clang::PPCallbacks
                       const clang::SourceRange& srcRange,
                       const clang::MacroDirective *MD)
     {
-      proto::Macro* macro = addDefine(pp, macroNameTok, filename, srcRange, false);
+      proto::Macro* macro = addMacro(pp, macroNameTok, filename, srcRange, false);
       macro->set_reference(true);
       if (MD)
       {
