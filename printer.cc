@@ -57,7 +57,7 @@ class Formatter
     for (size_t i = 0; i < headers.size(); ++i)
       rb.InsertTextBefore(0, headers[headers.size()-1-i]);
     rb.InsertTextAfter(text.size(), "</pre></td></tr></table></body></html>\n");
-    *html = rb.ToString();
+    *html = rb.toString();
     return getHtmlFilename(filename);;
   }
 

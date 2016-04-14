@@ -17,7 +17,7 @@ std::map<std::string, std::string> getBuiltinHeaders(const char* path)
   inc += CLANG_VERSION_STRING;
   inc += "/include/";
 
-  llvm::error_code ec;
+  std::error_code ec;
   llvm::sys::fs::directory_iterator it(path, ec);
   if (ec)
     return headers;
@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
   commands.push_back("-fno-spell-checking");
   llvm::IntrusiveRefCntPtr<clang::FileManager> files(
       new clang::FileManager(clang::FileSystemOptions()));
-  clang::tooling::ToolInvocation tool(commands, new indexer::IndexAction(true), files.getPtr());
+  clang::tooling::ToolInvocation tool(commands, new indexer::IndexAction(true), files.get());
   auto headers = getBuiltinHeaders(LLVM_PATH "/build/lib/clang/3.4.2/include");
   LOG_INFO << "Adding " << headers.size() << " clang builtin headers";
   for (const auto& it : headers)

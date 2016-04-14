@@ -1,7 +1,7 @@
-LLVM_PATH=$HOME/download/llvm-3.4.2.src
+LLVM_PATH=$HOME/llvm-3.5.0
 MUDUO_PATH=$HOME/build/release-install
 LEVELDB_PATH=$HOME/git/leveldb
-LLVM_BUILD=build-O2
+LLVM_BUILD=build
 
 CPP_ARGS="-I $LLVM_PATH/tools/clang/include/ \
   -I $LLVM_PATH/$LLVM_BUILD/tools/clang/include/ \
