@@ -44,3 +44,7 @@ $CC -std=c++11 -fno-rtti -g -Wall -o b.out printer.cc record.pb.o $CPP_ARGS \
   $LIBS -lclang -lLLVMSupport \
   -lmuduo_base -lleveldb -lprotobuf -lsnappy -ldl -ltinfo -lpthread
 
+$CC -std=c++11 -g -Wall -o dump ldb.cc record.pb.o $CPP_ARGS \
+  -L $LEVELDB_PATH \
+  -lleveldb -lsnappy -lpthread -lprotobuf
+

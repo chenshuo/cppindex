@@ -19,6 +19,8 @@
 
 #include <unordered_map>
 
+#include <boost/noncopyable.hpp>
+
 #include <stdio.h>
 
 const char* kBuiltInFileName = "<built-in>";
@@ -42,7 +44,8 @@ const char* reasonString(clang::PPCallbacks::FileChangeReason reason)
 
 namespace indexer
 {
-
+using std::string;
+#include "sink.h"
 #include "preprocess.h"
 
 class Visitor : public clang::RecursiveASTVisitor<Visitor>
@@ -133,8 +136,7 @@ class IndexConsumer : public clang::ASTConsumer
  public:
   IndexConsumer(clang::CompilerInstance& compiler, leveldb::DB* db)
     : preprocessor_(compiler.getPreprocessor()),
-      sourceManager_(compiler.getSourceManager()),
-      db_(db)
+      sourceManager_(compiler.getSourceManager())
   {
     LOG_DEBUG;
   }
@@ -155,20 +157,20 @@ class IndexConsumer : public clang::ASTConsumer
  private:
   const clang::Preprocessor& preprocessor_;
   clang::SourceManager& sourceManager_;
-  leveldb::DB* db_;
+  // leveldb::DB* db_;
 };
 
 class IndexAction : public clang::PluginASTAction
 {
  protected:
-  virtual clang::ASTConsumer *CreateASTConsumer(
+  clang::ASTConsumer *CreateASTConsumer(
       clang::CompilerInstance& compiler,
       clang::StringRef inputFile) override
   {
-    printf("CreateAST %s\n", inputFile.str().c_str());
-    auto* pp = new IndexPP(compiler, db_.get());
+    LOG_INFO << "IndexAction ctor " << inputFile.str();
+    auto* pp = new IndexPP(compiler, sink_);
     compiler.getPreprocessor().addPPCallbacks(pp);
-    return new IndexConsumer(compiler, db_.get());
+    return new IndexConsumer(compiler, nullptr);
     //auto* consumer = new PrintConsumer(CI.getPreprocessor(), CI.getSourceManager(), CI.getLangOpts());
     //pp->setRewriter(consumer->getRewriter());
     //return consumer;
@@ -176,7 +178,8 @@ class IndexAction : public clang::PluginASTAction
 
  public:
 
-  IndexAction(bool save = false)
+  IndexAction(Sink* sink, bool save = false)
+    : sink_(sink)
   {
     printf("%s\n", __FUNCTION__);
 
@@ -210,6 +213,7 @@ class IndexAction : public clang::PluginASTAction
   }
 
  private:
+  Sink* sink_;
   std::unique_ptr<leveldb::DB> db_;
 };
 

@@ -1,11 +1,11 @@
 class IndexPP : public clang::PPCallbacks
 {
  public:
-  IndexPP(clang::CompilerInstance& compiler, leveldb::DB* db)
+  IndexPP(clang::CompilerInstance& compiler, Sink* sink)
     : compiler_(compiler),
       preprocessor_(compiler.getPreprocessor()),
       sourceManager_(compiler.getSourceManager()),
-      db_(db)
+      sink_(sink)
   {
     // printf("predefines:\n%s\n", preprocessor_.getPredefines().c_str());
     LOG_DEBUG;
@@ -49,21 +49,21 @@ class IndexPP : public clang::PPCallbacks
     }
   }
 
-  virtual void FileSkipped(const clang::FileEntry &ParentFile,
-                           const clang::Token &FilenameTok,
-                           clang::SrcMgr::CharacteristicKind FileType) {
-    // printf("FileSkipped %s\n", preprocessor_.getSpelling(FilenameTok).c_str());
+  void FileSkipped(const clang::FileEntry &ParentFile,
+                   const clang::Token &FilenameTok,
+                   clang::SrcMgr::CharacteristicKind FileType) override {
+    printf("FileSkipped %s\n", preprocessor_.getSpelling(FilenameTok).c_str());
   }
 
-  virtual void InclusionDirective(clang::SourceLocation hashLoc,
-                                  const clang::Token &includeTok,
-                                  clang::StringRef filename,
-                                  bool isAngled,
-                                  clang::CharSourceRange filenameRange,
-                                  const clang::FileEntry *file,
-                                  clang::StringRef searchPath,
-                                  clang::StringRef relativePath,
-                                  const clang::Module *imported)
+  void InclusionDirective(clang::SourceLocation hashLoc,
+                          const clang::Token &includeTok,
+                          clang::StringRef filename,
+                          bool isAngled,
+                          clang::CharSourceRange filenameRange,
+                          const clang::FileEntry *file,
+                          clang::StringRef searchPath,
+                          clang::StringRef relativePath,
+                          const clang::Module *imported) override
   {
     if (file == nullptr)
       return;
@@ -83,7 +83,7 @@ class IndexPP : public clang::PPCallbacks
     bool isMacro = filenameRange.getBegin().isMacroID();
     if (isMacro)
     {
-      // LOG_WARN << currentFile << ":" << lineno << "#include " << filename.str() << " was a macro";
+      LOG_WARN << currentFile << ":" << lineno << "#include " << filename.str() << " was a macro";
       auto start = includeTok.getLocation();
       auto end = start.getLocWithOffset(includeTok.getLength());
       const clang::SourceRange srcRange(start, end);
@@ -114,20 +114,19 @@ class IndexPP : public clang::PPCallbacks
 
     if (!inc.add(lineno, includedFile, isMacro, &range))
     {
-      // LOG_WARN << "#include changed at " << currentFile << ":" << lineno << " -> " << includedFile;
+      LOG_WARN << "#include changed at " << currentFile << ":" << lineno << " -> " << includedFile;
     }
   }
 
-  virtual void EndOfMainFile()
+  void EndOfMainFile() override
   {
     std::string mainFile = filePath(sourceManager_.getMainFileID());
     LOG_INFO << __FUNCTION__ << " " << mainFile;
-    if (db_ == nullptr)
+    if (sink_ == nullptr)
       return;
 
     saveSources(mainFile);
 
-    // FIXME: save only when different
     std::string content;
     proto::Preprocess pp;
     for (const auto& it : files_)
@@ -161,20 +160,19 @@ class IndexPP : public clang::PPCallbacks
       }
       if (pp.SerializeToString(&content))
       {
-        leveldb::Status s = db_->Put(leveldb::WriteOptions(), uri, content);
-        assert(s.ok());
+        sink_->writeOrDie(uri, content);
       }
       else
       {
         assert(false && "Preprocess::Serialize");
       }
     }
-    db_ = nullptr;
+    sink_ = nullptr;
   }
 
   /// \brief Hook called whenever a macro definition is seen.
-  virtual void MacroDefined(const clang::Token &MacroNameTok,
-                            const clang::MacroDirective *MD)
+  void MacroDefined(const clang::Token &MacroNameTok,
+                    const clang::MacroDirective *MD) override
   {
     auto start = MacroNameTok.getLocation();
     if (start.isMacroID())
@@ -183,29 +181,33 @@ class IndexPP : public clang::PPCallbacks
       return;
     }
 
-    std::string filename = filePath(start);
+    string filename = filePath(start);
     clang::SourceRange range(start, start.getLocWithOffset(MacroNameTok.getLength()));
     macros_[filename].addMacro(this, MacroNameTok, filename, range);
   }
 
   /// \brief Called by Preprocessor::HandleMacroExpandedIdentifier when a
   /// macro invocation is found.
-  virtual void MacroExpands(const clang::Token& MacroNameTok, const clang::MacroDirective *MD,
-                            clang::SourceRange, const clang::MacroArgs *Args) {
+  void MacroExpands(const clang::Token& MacroNameTok,
+                    const clang::MacroDirective *MD,
+                    clang::SourceRange,
+                    const clang::MacroArgs *Args) override
+  {
     macroUsed(MacroNameTok, MD);
   }
 
   /// \brief Hook called whenever a macro \#undef is seen.
   ///
   /// MD is released immediately following this callback.
-  virtual void MacroUndefined(const clang::Token &MacroNameTok,
-                              const clang::MacroDirective *MD) {
+  void MacroUndefined(const clang::Token &MacroNameTok,
+                      const clang::MacroDirective *MD) override {
     macroUsed(MacroNameTok, MD);
   }
 
   /// \brief Hook called whenever the 'defined' operator is seen.
   /// \param MD The MacroDirective if the name was a macro, null otherwise.
-  void Defined(const clang::Token &MacroNameTok, const clang::MacroDirective *MD,
+  void Defined(const clang::Token &MacroNameTok,
+               const clang::MacroDirective *MD,
                clang::SourceRange Range) override
   {
     macroUsed(MacroNameTok, MD);
@@ -233,12 +235,12 @@ class IndexPP : public clang::PPCallbacks
   /// \brief Hook called when a source range is skipped.
   /// \param Range The SourceRange that was skipped. The range begins at the
   /// \#if/\#else directive and ends after the \#endif/\#else directive.
-  virtual void SourceRangeSkipped(clang::SourceRange Range) {
-    // printf("%s\n", __FUNCTION__);
+  void SourceRangeSkipped(clang::SourceRange Range) override {
+    printf("%s\n", __FUNCTION__);
     // FIXME
   }
 
-  std::string filePath(clang::FileID fileId) const
+  string filePath(clang::FileID fileId) const
   {
     if (fileId.isInvalid())
       return "<invalid location>";
@@ -319,7 +321,7 @@ class IndexPP : public clang::PPCallbacks
     auto start = MacroNameTok.getLocation();
     if (start.isMacroID())
     {
-      // printf("don't know %s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
+      printf("don't know %s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
       return;
     }
 
@@ -348,9 +350,41 @@ class IndexPP : public clang::PPCallbacks
     } while (rawTok.isNot(clang::tok::eof));
   }
 
-  void saveSources(const std::string& mainFile)
+  void saveSources(const std::string& mainFile) const
+  {
+    std::map<std::string, MD5String> md5s;
+    for (const auto& src : files_)
+    {
+      MD5String md5 = md5String(src.second);
+      md5s[src.first] = md5;
+      std::string uri = "src:" + src.first;
+      LOG_INFO << "Add " << uri;
+      sink_->writeOrDie(uri, src.second);
+    }
+
+    std::string uri = "main:" + mainFile;
+
+    // update main:
+    proto::Digests digests;
+    for (const auto& d : md5s)
+    {
+      auto* digest = digests.add_digests();
+      digest->set_filename(d.first);
+      llvm::StringRef str = d.second.str();
+      digest->set_md5(str.data(), str.size());
+    }
+    std::string content;
+    if (!digests.SerializeToString(&content))
+    {
+      assert(false && "Digests::Serialize");
+    }
+    sink_->writeOrDie(uri, content);
+  }
+
+  void saveSourcesDb(const std::string& mainFile)
   {
     std::string content;
+    leveldb::DB* db_ = nullptr;
 
     // read md5 from db
     leveldb::Status s = db_->Get(leveldb::ReadOptions(), kSrcmd5, &content);
@@ -421,7 +455,6 @@ class IndexPP : public clang::PPCallbacks
     }
     s = db_->Put(leveldb::WriteOptions(), uri, content);
     assert(s.ok());
-
   }
 
   // Record include's for a source file
@@ -524,7 +557,7 @@ class IndexPP : public clang::PPCallbacks
   clang::CompilerInstance& compiler_;
   const clang::Preprocessor& preprocessor_;
   clang::SourceManager& sourceManager_;
-  leveldb::DB* db_;
+  Sink* sink_;
 
   // map from filename to file content
   std::unordered_map<std::string, std::string> files_;
