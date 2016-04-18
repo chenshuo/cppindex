@@ -52,8 +52,9 @@ class Visitor : public clang::RecursiveASTVisitor<Visitor>
 {
   typedef clang::RecursiveASTVisitor<Visitor> base;
 public:
-  explicit Visitor(clang::ASTContext& context)
-    : mangle_(context.createMangleContext())
+  explicit Visitor(clang::ASTContext& context, clang::SourceManager& sourceManager)
+    : mangle_(context.createMangleContext()),
+      sourceManager_(sourceManager)
   {
   }
 
@@ -71,19 +72,28 @@ public:
   {
     bool isDef = decl->isThisDeclarationADefinition();
 
-    printf("%s Function %s %s\n",
+    printf("%s Function %s %s: ",
            isDef ? "def" : "decl",
            decl->getNameAsString().c_str(),
            getMangledName(decl).c_str());
+    fflush(stdout);
+    clang::SourceRange range = decl->getSourceRange();
+    range.getBegin().dump(sourceManager_);
+    printf(" - ");
+    fflush(stdout);
+    decl->getLocation().dump(sourceManager_);
+    printf("\n");
+    clang::StorageClass stroage = decl->getStorageClass();
+    clang::DeclarationNameInfo nameInfo = decl->getNameInfo();
     return true;
   }
 
-  bool VisitCallExpr(clang::CallExpr *expr)
+  bool VisitCallExprXX(clang::CallExpr *expr)
   {
     const clang::FunctionDecl* func = expr->getDirectCallee();
     if (!func)
       return true;
-    printf("CallExpr %p %p", expr->getCalleeDecl(), func);
+    printf("CallExpr %p callee %p func %p", expr, expr->getCalleeDecl(), func);
     if (expr->getCalleeDecl() != func)
       printf(" =====******");
     printf(" %s %s\n",
@@ -97,9 +107,19 @@ public:
     //printf("stmt \n");
     return true;
   }
+
   bool VisitExpr(const clang::Expr* expr)
   {
-    //printf("expr \n");
+    // printf("expr %p\n", expr);
+    return true;
+  }
+
+  bool VisitDeclRefExpr(clang::DeclRefExpr *expr)
+  {
+    printf("DeclRefExpr %p: ", expr);
+    fflush(stdout);
+    expr->getLocation().dump(sourceManager_);
+    puts("");
     return true;
   }
 
@@ -129,6 +149,7 @@ public:
   }
 
   std::unique_ptr<clang::MangleContext> mangle_;
+  clang::SourceManager& sourceManager_;
 };
 
 class IndexConsumer : public clang::ASTConsumer
@@ -148,16 +169,15 @@ class IndexConsumer : public clang::ASTConsumer
 
   void HandleTranslationUnit(clang::ASTContext& context) override
   {
-    LOG_DEBUG;
-    Visitor visitor(context);
+    LOG_INFO << "HandleTranslationUnit";
+    Visitor visitor(context, sourceManager_);
     visitor.TraverseDecl(context.getTranslationUnitDecl());
-    printf("HandleTranslationUnit done\n");
+    LOG_INFO << "HandleTranslationUnit done";
   }
 
  private:
   const clang::Preprocessor& preprocessor_;
   clang::SourceManager& sourceManager_;
-  // leveldb::DB* db_;
 };
 
 class IndexAction : public clang::PluginASTAction

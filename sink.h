@@ -2,11 +2,13 @@ class Sink : boost::noncopyable
 {
  public:
   Sink()
-    : out_(::fopen("sink", "wb"))
+    : out_(::fopen("sink", "wb"))  // FIXME: CHECK_NOTNULL
   {
+    LOG_INFO << "Sink " << out_;
   }
   ~Sink()
   {
+    LOG_INFO << "~Sink";
     ::fclose(out_);
   }
 
@@ -21,6 +23,7 @@ class Sink : boost::noncopyable
       int value_len = value.size();
       fwrite(&value_len, 1, sizeof value_len, out_);
       fwrite(value.data(), 1, value.size(), out_);
+      printf("write %s %d\n", key.c_str(), value_len);
     }
   }
  private:

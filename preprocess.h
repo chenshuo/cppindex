@@ -52,7 +52,7 @@ class IndexPP : public clang::PPCallbacks
   void FileSkipped(const clang::FileEntry &ParentFile,
                    const clang::Token &FilenameTok,
                    clang::SrcMgr::CharacteristicKind FileType) override {
-    printf("FileSkipped %s\n", preprocessor_.getSpelling(FilenameTok).c_str());
+    // printf("FileSkipped %s\n", preprocessor_.getSpelling(FilenameTok).c_str());
   }
 
   void InclusionDirective(clang::SourceLocation hashLoc,
@@ -178,6 +178,7 @@ class IndexPP : public clang::PPCallbacks
     if (start.isMacroID())
     {
       printf("don't know %s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
+      abort();
       return;
     }
 
@@ -236,7 +237,7 @@ class IndexPP : public clang::PPCallbacks
   /// \param Range The SourceRange that was skipped. The range begins at the
   /// \#if/\#else directive and ends after the \#endif/\#else directive.
   void SourceRangeSkipped(clang::SourceRange Range) override {
-    printf("%s\n", __FUNCTION__);
+    // printf("%s\n", __FUNCTION__);
     // FIXME
   }
 
@@ -321,7 +322,7 @@ class IndexPP : public clang::PPCallbacks
     auto start = MacroNameTok.getLocation();
     if (start.isMacroID())
     {
-      printf("don't know %s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
+      // printf("don't know %s %s\n", __FUNCTION__, MacroNameTok.getIdentifierInfo()->getName().str().c_str());
       return;
     }
 
@@ -339,8 +340,8 @@ class IndexPP : public clang::PPCallbacks
     clang::Token rawTok;
     do {
       L.LexFromRawLexer(rawTok);
-      unsigned TokOffs = sourceManager_.getFileOffset(rawTok.getLocation());
-      unsigned TokLen = rawTok.getLength();
+      //unsigned TokOffs = sourceManager_.getFileOffset(rawTok.getLocation());
+      //unsigned TokLen = rawTok.getLength();
       // comments
       //if (rawTok.is(clang::tok::comment))
       //  printf("off=%d len=%d kind=%s\n",
@@ -358,7 +359,7 @@ class IndexPP : public clang::PPCallbacks
       MD5String md5 = md5String(src.second);
       md5s[src.first] = md5;
       std::string uri = "src:" + src.first;
-      LOG_INFO << "Add " << uri;
+      // LOG_INFO << "Add " << uri;
       sink_->writeOrDie(uri, src.second);
     }
 
@@ -560,7 +561,7 @@ class IndexPP : public clang::PPCallbacks
   Sink* sink_;
 
   // map from filename to file content
-  std::unordered_map<std::string, std::string> files_;
+  std::map<std::string, std::string> files_;
   // map from filename to inclusions
   std::unordered_map<std::string, Inclusions> inclusions_;
   // map from filename to macros
