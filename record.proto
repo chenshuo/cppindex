@@ -12,6 +12,35 @@ message Digests {
 
 ////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////
+
+enum Linkage {
+  kNoLinkage = 0;
+  kInternalLinkage = 1;
+  kUniqueExternalLinkage = 2; 
+  kVisibleNoLinkage = 3;
+  kExternalLinkage = 4;
+}
+
+enum StorageClass {
+  kNone = 0;
+  kExtern = 1;
+  kStatic = 2;
+}
+
+message Function {
+  optional string name = 1;
+  optional string mangled = 2;
+  optional string signature = 3;
+  optional Range name_range = 4;
+  optional bool define = 5;
+  optional bool macro = 6;
+  optional Linkage linkage = 7;
+  optional StorageClass storage_class = 8;
+}
+
+////////////////////////////////////////////////////////////
+
 message Preprocess {
   optional string filename = 1;
   repeated Inclusion includes = 2;
@@ -52,8 +81,9 @@ message Declarator {
 ////////////////////////////////////////////////////////////
 
 message Range {
-  optional Location begin = 1;
-  optional Location end = 2;
+  optional string filename = 1;
+  optional Location begin = 2;
+  optional Location end = 3;
 }
 
 message Location

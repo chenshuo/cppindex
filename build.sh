@@ -1,7 +1,7 @@
-LLVM_PATH=$HOME/llvm-3.5.0
+LLVM_PATH=$HOME/llvm-3.5.2.src
 MUDUO_PATH=$HOME/build/release-install
 LEVELDB_PATH=$HOME/git/leveldb
-LLVM_BUILD=build
+LLVM_BUILD=build-O2
 
 CPP_ARGS="-I $LLVM_PATH/tools/clang/include/ \
   -I $LLVM_PATH/$LLVM_BUILD/tools/clang/include/ \
@@ -36,7 +36,7 @@ $CC -std=c++11 -fno-rtti -g -Wall indexer.cc record.pb.o $CPP_ARGS \
   $LIBS -lclang -lLLVMSupport \
   -lmuduo_base -lleveldb -lprotobuf -lsnappy -ldl -ltinfo -lpthread
 
-$CC -std=c++11 -fno-rtti -g -Wall -o b.out printer.cc record.pb.o $CPP_ARGS \
+echo $CC -std=c++11 -fno-rtti -g -Wall -o b.out printer.cc record.pb.o $CPP_ARGS \
   -L $LIB \
   -L $MUDUO_PATH/lib \
   -L $LEVELDB_PATH \
@@ -44,7 +44,7 @@ $CC -std=c++11 -fno-rtti -g -Wall -o b.out printer.cc record.pb.o $CPP_ARGS \
   $LIBS -lclang -lLLVMSupport \
   -lmuduo_base -lleveldb -lprotobuf -lsnappy -ldl -ltinfo -lpthread
 
-$CC -std=c++11 -g -Wall -o dump ldb.cc record.pb.o $CPP_ARGS \
+echo $CC -std=c++11 -g -Wall -o dump ldb.cc record.pb.o $CPP_ARGS \
   -L $LEVELDB_PATH \
   -lleveldb -lsnappy -lpthread -lprotobuf
 

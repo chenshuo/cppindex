@@ -5,7 +5,9 @@ class IndexPP : public clang::PPCallbacks
     : compiler_(compiler),
       preprocessor_(compiler.getPreprocessor()),
       sourceManager_(compiler.getSourceManager()),
+      util_(sourceManager_, compiler.getLangOpts()),
       sink_(sink)
+
   {
     // printf("predefines:\n%s\n", preprocessor_.getPredefines().c_str());
     LOG_DEBUG;
@@ -265,20 +267,8 @@ class IndexPP : public clang::PPCallbacks
 
   void sourceRangeToRange(const clang::SourceRange& sourceRange, proto::Range* range) const
   {
-    sourceLocationToLocation(sourceRange.getBegin(), range->mutable_begin());
-    sourceLocationToLocation(sourceRange.getEnd(), range->mutable_end());
-  }
-
-  void sourceLocationToLocation(clang::SourceLocation sloc, proto::Location* loc) const
-  {
-    assert(sloc.isFileID());
-    auto decomposed = sourceManager_.getDecomposedLoc(sloc);
-    loc->set_offset(decomposed.second);
-    bool invalid = true;
-    loc->set_lineno(sourceManager_.getLineNumber(decomposed.first, decomposed.second, &invalid));
-    assert(!invalid && "getLineNumber");
-    loc->set_column(sourceManager_.getColumnNumber(decomposed.first, decomposed.second, &invalid));
-    assert(!invalid && "getColumnNumber");
+    util_.sourceLocationToLocation(sourceRange.getBegin(), range->mutable_begin());
+    util_.sourceLocationToLocation(sourceRange.getEnd(), range->mutable_end());
   }
 
   typedef llvm::SmallString<32> MD5String;
@@ -294,6 +284,26 @@ class IndexPP : public clang::PPCallbacks
   }
 
  private:
+
+  static constexpr const char* kBuiltInFileName = "<built-in>";
+
+  static const char* reasonString(clang::PPCallbacks::FileChangeReason reason)
+  {
+    switch (reason)
+    {
+      case clang::PPCallbacks::EnterFile:
+        return "Enter";
+      case clang::PPCallbacks::ExitFile:
+        return "Exit";
+      case clang::PPCallbacks::SystemHeaderPragma:
+        return "SystemHeaderPragma";
+      case clang::PPCallbacks::RenameFile:
+        return "Rename";
+      default:
+        return "Unknown";
+    }
+  }
+
   bool getFileContent(clang::SourceLocation location, std::string* content)
   {
     assert(location.isFileID());
@@ -558,6 +568,7 @@ class IndexPP : public clang::PPCallbacks
   clang::CompilerInstance& compiler_;
   const clang::Preprocessor& preprocessor_;
   clang::SourceManager& sourceManager_;
+  const Util util_;
   Sink* sink_;
 
   // map from filename to file content

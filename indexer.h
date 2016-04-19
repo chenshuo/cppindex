@@ -1,4 +1,4 @@
-#include "record.pb.h"
+#include "build/record.pb.h"
 
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/MD5.h"
@@ -23,38 +23,23 @@
 
 #include <stdio.h>
 
-const char* kBuiltInFileName = "<built-in>";
-
-const char* reasonString(clang::PPCallbacks::FileChangeReason reason)
-{
-  switch (reason)
-  {
-    case clang::PPCallbacks::EnterFile:
-      return "Enter";
-    case clang::PPCallbacks::ExitFile:
-      return "Exit";
-    case clang::PPCallbacks::SystemHeaderPragma:
-      return "SystemHeaderPragma";
-    case clang::PPCallbacks::RenameFile:
-      return "Rename";
-    default:
-      return "Unknown";
-  }
-}
-
 namespace indexer
 {
 using std::string;
 #include "sink.h"
+#include "util.h"
 #include "preprocess.h"
 
 class Visitor : public clang::RecursiveASTVisitor<Visitor>
 {
   typedef clang::RecursiveASTVisitor<Visitor> base;
+  typedef clang::SourceLocation Location;
 public:
-  explicit Visitor(clang::ASTContext& context, clang::SourceManager& sourceManager)
+  explicit Visitor(clang::ASTContext& context)
     : mangle_(context.createMangleContext()),
-      sourceManager_(sourceManager)
+      sourceManager_(context.getSourceManager()),
+      langOpts_(context.getLangOpts()),
+      util_(sourceManager_, langOpts_)
   {
   }
 
@@ -70,25 +55,36 @@ public:
 
   bool VisitFunctionDecl(const clang::FunctionDecl* decl)
   {
-    bool isDef = decl->isThisDeclarationADefinition();
+    proto::Function func;
+    assert(decl->getDeclName());
+    func.set_name(decl->getNameAsString());
+    {
+    string mangled = getMangledName(decl);
+    if (!mangled.empty())
+      func.set_mangled(mangled);
+    }
+    {
+      clang::QualType type = decl->getType();
+      clang::SplitQualType split = type.split();
+      func.set_signature(clang::QualType::getAsString(split));
+    }
+    func.set_define(decl->isThisDeclarationADefinition());
+    Util::setStorageClass(decl->getStorageClass(), &func);
 
-    printf("%s Function %s %s: ",
-           isDef ? "def" : "decl",
-           decl->getNameAsString().c_str(),
-           getMangledName(decl).c_str());
+    Location start = decl->getLocation();
+    if (start.isMacroID()) func.set_macro(true);
+    fillNameRange(func.name(), start, func.mutable_name_range());
+    // FIXME:
+    // BUILD_BUG_ON
+
+    // clang::DeclarationNameInfo nameInfo = decl->getNameInfo();
+    printf("%s\n", func.DebugString().c_str());
     fflush(stdout);
-    clang::SourceRange range = decl->getSourceRange();
-    range.getBegin().dump(sourceManager_);
-    printf(" - ");
-    fflush(stdout);
-    decl->getLocation().dump(sourceManager_);
-    printf("\n");
-    clang::StorageClass stroage = decl->getStorageClass();
-    clang::DeclarationNameInfo nameInfo = decl->getNameInfo();
+
     return true;
   }
 
-  bool VisitCallExprXX(clang::CallExpr *expr)
+  bool VisitCallExprNOTUSED(clang::CallExpr *expr)
   {
     const clang::FunctionDecl* func = expr->getDirectCallee();
     if (!func)
@@ -116,10 +112,12 @@ public:
 
   bool VisitDeclRefExpr(clang::DeclRefExpr *expr)
   {
+    /*
     printf("DeclRefExpr %p: ", expr);
     fflush(stdout);
     expr->getLocation().dump(sourceManager_);
     puts("");
+    */
     return true;
   }
 
@@ -148,8 +146,44 @@ public:
     return "";
   }
 
+  void fillNameRange(const string& name, Location start, proto::Range* range)
+  {
+    if (start.isFileID())
+    {
+      string spelling = util_.getSpelling(start);
+      if (spelling != name)
+      {
+        LOG_WARN << "Spelling " << spelling << " != " << name;
+      }
+
+      clang::FileID fileId = sourceManager_.getFileID(start);
+      if (const clang::FileEntry* fileEntry = sourceManager_.getFileEntryForID(fileId))
+        range->set_filename(fileEntry->getName());
+
+      Location end = clang::Lexer::getLocForEndOfToken(
+          start, 0, sourceManager_, langOpts_);
+      util_.sourceLocationToLocation(start, range->mutable_begin());
+      util_.sourceLocationToLocation(end, range->mutable_end());
+    }
+    else
+    {
+      start.dump(sourceManager_);
+      llvm::errs() << " ====== " << name << " was not a file ID\n";
+      Location fileLoc = sourceManager_.getFileLoc(start);
+      fileLoc.dump(sourceManager_);
+      llvm::errs() << " fileLoc\n";
+      string spelling = util_.getSpelling(fileLoc);
+      if (spelling == name)
+        fillNameRange(name, fileLoc, range);
+      else
+        LOG_WARN << "Spelling " << spelling << " != " << name;
+    }
+  }
+
   std::unique_ptr<clang::MangleContext> mangle_;
   clang::SourceManager& sourceManager_;
+  const clang::LangOptions& langOpts_;
+  const Util util_;
 };
 
 class IndexConsumer : public clang::ASTConsumer
@@ -170,7 +204,8 @@ class IndexConsumer : public clang::ASTConsumer
   void HandleTranslationUnit(clang::ASTContext& context) override
   {
     LOG_INFO << "HandleTranslationUnit";
-    Visitor visitor(context, sourceManager_);
+    assert(&sourceManager_ == &context.getSourceManager());
+    Visitor visitor(context);
     visitor.TraverseDecl(context.getTranslationUnitDecl());
     LOG_INFO << "HandleTranslationUnit done";
   }

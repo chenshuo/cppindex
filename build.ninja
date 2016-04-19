@@ -1,0 +1,46 @@
+home = /home/schen
+llvm = $home/llvm-3.5.2.src
+leveldb = $home/git/leveldb
+muduo = $home/build/release-install
+builddir = build
+cxx = g++
+# cxx = $llvm/build-O2/bin/clang++
+
+cflags = -Wall -std=c++11 -g -O0 $
+  -I$llvm/include -I$llvm/build/include $
+  -I$leveldb/include -I$muduo/include $
+  -DLLVM_PATH=\"$llvm\"
+
+ldflags = -L $llvm/build-O2/lib -Wl,-rpath=$llvm/build-O2/lib $
+  -L $muduo/lib -L $leveldb
+clanglibs = -lclangTooling -lclangRewrite -lclangFrontend -lclangSerialization $
+  -lclangDriver -lclangSema -lclangAnalysis -lclangEdit -lclangAST $
+  -lclangParse -lclangSema -lclangLex -lclangBasic $
+  -lLLVMBitReader -lLLVMMCParser -lLLVMMC -lLLVMTransformUtils $
+  -lLLVMOption -lLLVMCore -lLLVMSupport
+
+clanglibs = -lclang
+libs = $clanglibs $
+  -lmuduo_base -lleveldb -lprotobuf -lsnappy -ldl -ltinfo -lz -lpthread
+
+rule protoc
+  command = protoc --cpp_out=$builddir $in
+  description = PROTOC $in
+
+rule cxx
+  command = $cxx -MMD -MT $out -MF $out.d $cflags -c $in -o $out
+  description = CXX $out
+  depfile = $out.d
+  # comment this line to keep .d file
+  deps = gcc
+
+rule link
+  command = $cxx $ldflags -o $out $in $libs
+  description = LINK $out
+
+build $builddir/indexer.o: cxx indexer.cc
+  cflags = $cflags -fno-rtti -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
+build $builddir/record.pb.o: cxx $builddir/record.pb.cc
+build $builddir/record.pb.h $builddir/record.pb.cc: protoc record.proto
+
+build a.out: link $builddir/indexer.o $builddir/record.pb.o

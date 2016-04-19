@@ -26,6 +26,7 @@ class Sink : boost::noncopyable
       printf("write %s %d\n", key.c_str(), value_len);
     }
   }
+
  private:
   FILE* out_;
 };
