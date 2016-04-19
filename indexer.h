@@ -73,7 +73,7 @@ public:
 
     Location start = decl->getLocation();
     if (start.isMacroID()) func.set_macro(true);
-    fillNameRange(func.name(), start, func.mutable_name_range());
+    util_.setNameRange(func.name(), start, func.mutable_name_range());
     // FIXME:
     // BUILD_BUG_ON
 
@@ -112,12 +112,10 @@ public:
 
   bool VisitDeclRefExpr(clang::DeclRefExpr *expr)
   {
-    /*
     printf("DeclRefExpr %p: ", expr);
     fflush(stdout);
     expr->getLocation().dump(sourceManager_);
     puts("");
-    */
     return true;
   }
 
@@ -144,40 +142,6 @@ public:
       return mangled_name.str().str();
     }
     return "";
-  }
-
-  void fillNameRange(const string& name, Location start, proto::Range* range)
-  {
-    if (start.isFileID())
-    {
-      string spelling = util_.getSpelling(start);
-      if (spelling != name)
-      {
-        LOG_WARN << "Spelling " << spelling << " != " << name;
-      }
-
-      clang::FileID fileId = sourceManager_.getFileID(start);
-      if (const clang::FileEntry* fileEntry = sourceManager_.getFileEntryForID(fileId))
-        range->set_filename(fileEntry->getName());
-
-      Location end = clang::Lexer::getLocForEndOfToken(
-          start, 0, sourceManager_, langOpts_);
-      util_.sourceLocationToLocation(start, range->mutable_begin());
-      util_.sourceLocationToLocation(end, range->mutable_end());
-    }
-    else
-    {
-      start.dump(sourceManager_);
-      llvm::errs() << " ====== " << name << " was not a file ID\n";
-      Location fileLoc = sourceManager_.getFileLoc(start);
-      fileLoc.dump(sourceManager_);
-      llvm::errs() << " fileLoc\n";
-      string spelling = util_.getSpelling(fileLoc);
-      if (spelling == name)
-        fillNameRange(name, fileLoc, range);
-      else
-        LOG_WARN << "Spelling " << spelling << " != " << name;
-    }
   }
 
   std::unique_ptr<clang::MangleContext> mangle_;

@@ -23,9 +23,9 @@ class IndexPP : public clang::PPCallbacks
                    clang::SrcMgr::CharacteristicKind fileType,
                    clang::FileID previousFileID) override
   {
-    LOG_TRACE << reasonString(reason) << " " << filePath(location);
-
     const std::string file_changed = filePath(location);
+    LOG_TRACE << reasonString(reason) << " " << file_changed;
+
     if (reason == clang::PPCallbacks::EnterFile)
     {
       std::string content;
@@ -43,6 +43,10 @@ class IndexPP : public clang::PPCallbacks
         {
           LOG_WARN << "File content changed " << file_changed;
         }
+        else
+        {
+          LOG_INFO << "reenter file " << file_changed;
+        }
       }
       else
       {
@@ -55,6 +59,7 @@ class IndexPP : public clang::PPCallbacks
                    const clang::Token &FilenameTok,
                    clang::SrcMgr::CharacteristicKind FileType) override {
     // printf("FileSkipped %s\n", preprocessor_.getSpelling(FilenameTok).c_str());
+    LOG_TRACE << "FileSkipped " <<  preprocessor_.getSpelling(FilenameTok);
   }
 
   void InclusionDirective(clang::SourceLocation hashLoc,

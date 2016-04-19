@@ -28,6 +28,47 @@ struct Util
       return tokenSpelling.str();
   }
 
+  void setNameRange(const string& name, clang::SourceLocation start, proto::Range* range) const
+  {
+    assert(start.isValid());
+    if (start.isFileID())
+    {
+      string spelling = getSpelling(start);
+      assert(spelling == name);
+
+      clang::FileID fileId = sourceManager_.getFileID(start);
+      if (const clang::FileEntry* fileEntry = sourceManager_.getFileEntryForID(fileId))
+        range->set_filename(fileEntry->getName());
+      else
+        assert(0 && "Cannot get file entry.");
+
+      clang::SourceLocation end = clang::Lexer::getLocForEndOfToken(
+          start, 0, sourceManager_, langOpts_);
+      sourceLocationToLocation(start, range->mutable_begin());
+      sourceLocationToLocation(end, range->mutable_end());
+      // assert [start, end] == name FIXME
+    }
+    else
+    {
+      clang::SourceLocation fileLoc = sourceManager_.getFileLoc(start);
+      string spelling = getSpelling(fileLoc);
+      if (spelling == name)
+      {
+        setNameRange(name, fileLoc, range);
+      }
+      else
+      {
+        // FIXME
+        LOG_WARN << "Spelling " << spelling << " != " << name;
+        fflush(stdout);
+        start.dump(sourceManager_);
+        llvm::errs() << " fileLoc ";
+        fileLoc.dump(sourceManager_);
+        llvm::errs() << "\n";
+      }
+    }
+  }
+
   static proto::StorageClass toProto(clang::StorageClass sc)
   {
     switch (sc)
