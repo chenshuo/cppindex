@@ -140,7 +140,6 @@ class IndexPP : public clang::PPCallbacks
     {
       const std::string& filename = it.first;
       std::string uri = "prep:" + filename;
-      // leveldb::Status s = db_->Get(leveldb::ReadOptions(), uri, &content);
 
       // LOG_INFO << it.first << ":\n" << pp.DebugString();
       pp.Clear();
@@ -276,18 +275,6 @@ class IndexPP : public clang::PPCallbacks
     util_.sourceLocationToLocation(sourceRange.getEnd(), range->mutable_end());
   }
 
-  typedef llvm::SmallString<32> MD5String;
-  static MD5String md5String(const std::string& text)
-  {
-    MD5String str;
-    llvm::MD5 md5;
-    md5.update(text);
-    llvm::MD5::MD5Result result;
-    md5.final(result);
-    llvm::MD5::stringifyResult(result, str);
-    return str;
-  }
-
  private:
 
   static constexpr const char* kBuiltInFileName = "<built-in>";
@@ -378,9 +365,6 @@ class IndexPP : public clang::PPCallbacks
       sink_->writeOrDie(uri, src.second);
     }
 
-    std::string uri = "main:" + mainFile;
-
-    // update main:
     proto::Digests digests;
     for (const auto& d : md5s)
     {
@@ -394,83 +378,8 @@ class IndexPP : public clang::PPCallbacks
     {
       assert(false && "Digests::Serialize");
     }
+    std::string uri = "digests:" + mainFile;
     sink_->writeOrDie(uri, content);
-  }
-
-  void saveSourcesDb(const std::string& mainFile)
-  {
-    std::string content;
-    leveldb::DB* db_ = nullptr;
-
-    // read md5 from db
-    leveldb::Status s = db_->Get(leveldb::ReadOptions(), kSrcmd5, &content);
-    proto::Digests digests;
-    std::map<std::string, MD5String> md5s;
-    if (s.ok() && digests.ParseFromString(content))
-    {
-      for (auto it : digests.digests())
-      {
-        md5s[it.filename()] = it.md5();
-      }
-    }
-
-    std::map<std::string, MD5String> mymd5s;
-    // update/save source file when md5 is different
-    for (const auto& src : files_)
-    {
-      MD5String md5 = md5String(src.second);
-      mymd5s[src.first] = md5;
-      MD5String& origmd5 = md5s[src.first];
-      if (origmd5 != md5)
-      {
-        std::string uri = "src:" + src.first;
-        if (!origmd5.empty())
-        {
-          LOG_WARN << "Different content for " << uri;
-        }
-        else
-        {
-          LOG_INFO << "Add " << uri;
-        }
-        origmd5 = md5;
-        s = db_->Put(leveldb::WriteOptions(), uri, src.second);
-        assert(s.ok());
-      }
-    }
-
-    // update digests
-    digests.Clear();
-    for (const auto& d : md5s)
-    {
-      auto* digest = digests.add_digests();
-      digest->set_filename(d.first);
-      llvm::StringRef str = d.second.str();
-      digest->set_md5(str.data(), str.size());
-    }
-    if (!digests.SerializeToString(&content))
-    {
-      assert(false && "Digests::Serialize");
-    }
-    s = db_->Put(leveldb::WriteOptions(), kSrcmd5, content);
-    assert(s.ok());
-
-    std::string uri = "main:" + mainFile;
-
-    // update main:
-    digests.Clear();
-    for (const auto& d : mymd5s)
-    {
-      auto* digest = digests.add_digests();
-      digest->set_filename(d.first);
-      llvm::StringRef str = d.second.str();
-      digest->set_md5(str.data(), str.size());
-    }
-    if (!digests.SerializeToString(&content))
-    {
-      assert(false && "Digests::Serialize");
-    }
-    s = db_->Put(leveldb::WriteOptions(), uri, content);
-    assert(s.ok());
   }
 
   // Record include's for a source file
@@ -583,6 +492,5 @@ class IndexPP : public clang::PPCallbacks
   // map from filename to macros
   std::unordered_map<std::string, Macros> macros_;
 
-  static constexpr const char* kSrcmd5 = "srcmd5:";
 };
 

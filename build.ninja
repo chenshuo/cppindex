@@ -38,9 +38,20 @@ rule link
   command = $cxx $ldflags -o $out $in $libs
   description = LINK $out
 
+rule single
+  command = $cxx -MMD -MT $out -MF $out.d $cflags $in -o $out $ldflags $libs
+  description = CXX $out
+  depfile = $out.d
+  # comment this line to keep .d file
+  deps = gcc
+
 build $builddir/indexer.o: cxx indexer.cc
   cflags = $cflags -fno-rtti -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
 build $builddir/record.pb.o: cxx $builddir/record.pb.cc
+  cflags = $cflags -O2
 build $builddir/record.pb.h $builddir/record.pb.cc: protoc record.proto
 
 build a.out: link $builddir/indexer.o $builddir/record.pb.o
+build b.out: single joiner.cc $builddir/record.pb.o
+build c.out: single printer.cc $builddir/record.pb.o
+build d.out: single dump.cc $builddir/record.pb.o

@@ -47,8 +47,7 @@ int main(int argc, char* argv[])
   llvm::IntrusiveRefCntPtr<clang::FileManager> files(
       new clang::FileManager(clang::FileSystemOptions()));
   {
-    indexer::Sink sink;
-  clang::tooling::ToolInvocation tool(commands, new indexer::IndexAction(&sink), files.get());
+  clang::tooling::ToolInvocation tool(commands, new indexer::IndexAction, files.get());
   auto headers = getBuiltinHeaders(LLVM_PATH "/build/lib/clang/3.4.2/include");
   LOG_INFO << "Adding " << headers.size() << " clang builtin headers";
   for (const auto& it : headers)

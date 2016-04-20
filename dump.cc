@@ -1,6 +1,14 @@
 #include "leveldb/db.h"
-#include "record.pb.h"
+#include "llvm/Support/MD5.h"
+#include "build/record.pb.h"
 #include <memory>
+
+#include <boost/noncopyable.hpp>
+
+#include <stdio.h>
+
+using std::string;
+#include "sink.h"
 
 template<typename MSG>
 void parseAndPrint(const std::string& content)
@@ -14,13 +22,21 @@ void parseAndPrint(const std::string& content)
 
 void print(leveldb::Slice key, const std::string& content)
 {
-  if (key.starts_with("srcmd5:") || key.starts_with("main:"))
+  if (key.starts_with("src:"))
+  {
+    printf("%s", content.c_str());
+  }
+  else if (key.starts_with("main:"))
+  {
+    parseAndPrint<indexer::proto::CompilationUnit>(content);
+  }
+  else if (key.starts_with("digests:"))
   {
     parseAndPrint<indexer::proto::Digests>(content);
   }
-  else if (key.starts_with("src:"))
+  else if (key.starts_with("functions:"))
   {
-    printf("%s", content.c_str());
+    parseAndPrint<indexer::proto::Functions>(content);
   }
   else if (key.starts_with("prep:"))
   {
@@ -32,7 +48,7 @@ void print(leveldb::Slice key, const std::string& content)
   }
 }
 
-int main(int argc, char* argv[])
+void dumpdb(const char* key)
 {
   leveldb::DB* db;
   leveldb::Options options;
@@ -41,7 +57,7 @@ int main(int argc, char* argv[])
   {
     std::unique_ptr<leveldb::DB> own(db);
     std::unique_ptr<leveldb::Iterator> it(db->NewIterator(leveldb::ReadOptions()));
-    if (argc == 1)
+    if (key == NULL)
     {
       size_t total = 0;
       for (it->SeekToFirst(); it->Valid(); it->Next())
@@ -55,7 +71,6 @@ int main(int argc, char* argv[])
     else
     {
       std::string content;
-      const char* key = argv[1];
       leveldb::Status s = db->Get(leveldb::ReadOptions(), key, &content);
       if (s.ok())
       {
@@ -66,6 +81,20 @@ int main(int argc, char* argv[])
   }
   else
   {
-    printf("%s \n", status.ToString().c_str());
+    printf("%s\n", status.ToString().c_str());
+  }
+}
+
+int main(int argc, char* argv[])
+{
+  if (argc == 2)
+  {
+    Reader reader(argv[1]);
+    string key, value;
+    while (reader.read(&key, &value))
+    {
+      printf("KEY %s %zd\n", key.c_str(), value.size());
+      print(key, value); printf("\n");
+    }
   }
 }

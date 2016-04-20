@@ -9,6 +9,21 @@ struct Util
   {
   }
   
+  string filePathOrDie(clang::FileID fileId) const
+  {
+    if (const clang::FileEntry* fileEntry = sourceManager_.getFileEntryForID(fileId))
+      return fileEntry->getName();
+    else
+      assert(0 && "Cannot getFileEntryForID()");
+  }
+
+  string filePathOrDie(clang::SourceLocation start) const
+  {
+    clang::FileID fileId = sourceManager_.getFileID(start);
+    assert(!fileId.isInvalid());
+    return filePathOrDie(fileId);
+  }
+
   void sourceLocationToLocation(clang::SourceLocation sloc, proto::Location* loc) const
   {
     assert(sloc.isFileID());
@@ -28,7 +43,7 @@ struct Util
       return tokenSpelling.str();
   }
 
-  void setNameRange(const string& name, clang::SourceLocation start, proto::Range* range) const
+  bool setNameRange(const string& name, clang::SourceLocation start, proto::Range* range) const
   {
     assert(start.isValid());
     if (start.isFileID())
@@ -36,17 +51,12 @@ struct Util
       string spelling = getSpelling(start);
       assert(spelling == name);
 
-      clang::FileID fileId = sourceManager_.getFileID(start);
-      if (const clang::FileEntry* fileEntry = sourceManager_.getFileEntryForID(fileId))
-        range->set_filename(fileEntry->getName());
-      else
-        assert(0 && "Cannot get file entry.");
-
       clang::SourceLocation end = clang::Lexer::getLocForEndOfToken(
           start, 0, sourceManager_, langOpts_);
       sourceLocationToLocation(start, range->mutable_begin());
       sourceLocationToLocation(end, range->mutable_end());
       // assert [start, end] == name FIXME
+      return true;
     }
     else
     {
@@ -54,17 +64,26 @@ struct Util
       string spelling = getSpelling(fileLoc);
       if (spelling == name)
       {
-        setNameRange(name, fileLoc, range);
+        // asm-generic/io.h:
+        // #define readb readb
+        // static inline u8 readb(const volatile void __iomem *addr) { ... }
+        return setNameRange(name, fileLoc, range);
       }
       else
       {
-        // FIXME
+        // FIXME: record usage with line only
+        // FIXME: #define alloc_page(gfp_mask) alloc_pages(gfp_mask, 0)
+        sourceLocationToLocation(fileLoc, range->mutable_begin());
+        range->set_anchor(true);
+        /*
         LOG_WARN << "Spelling " << spelling << " != " << name;
         fflush(stdout);
         start.dump(sourceManager_);
         llvm::errs() << " fileLoc ";
         fileLoc.dump(sourceManager_);
         llvm::errs() << "\n";
+        */
+        return false;
       }
     }
   }

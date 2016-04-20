@@ -12,6 +12,19 @@ message Digests {
 
 ////////////////////////////////////////////////////////////
 
+message CompilationUnit
+{
+  optional string main_file = 1;
+  // defined functions
+  repeated Function functions = 2;
+  //repeated string
+}
+
+message Functions {
+  optional string filename = 1;
+  repeated Function functions = 2;
+}
+
 ////////////////////////////////////////////////////////////
 
 enum Linkage {
@@ -28,15 +41,26 @@ enum StorageClass {
   kStatic = 2;
 }
 
+enum Usage {
+  kUnknown = 0;
+  kDeclare = 1;
+  kDefine = 2;
+  kUse = 3;
+}
+
 message Function {
   optional string name = 1;
   optional string mangled = 2;
   optional string signature = 3;
   optional Range name_range = 4;
-  optional bool define = 5;
-  optional bool macro = 6;
-  optional Linkage linkage = 7;
-  optional StorageClass storage_class = 8;
+  optional bool macro = 5;
+  optional Usage usage = 6;
+  optional StorageClass storage_class = 7;
+  // optional Linkage linkage = X;
+
+  // when usage != kDefine, ref_file and ref_lineno are usually defined, except for __builtin_memcpy etc.
+  optional string def_file = 8;
+  optional int32 def_lineno = 9 [default = -1];
 }
 
 ////////////////////////////////////////////////////////////
@@ -45,7 +69,7 @@ message Preprocess {
   optional string filename = 1;
   repeated Inclusion includes = 2;
   repeated Macro macros = 3;
-  repeated Declarator declarators = 4;
+  // repeated Declarator declarators = 4;
 }
 
 message Inclusion {
@@ -84,6 +108,7 @@ message Range {
   optional string filename = 1;
   optional Location begin = 2;
   optional Location end = 3;
+  optional bool anchor = 4;
 }
 
 message Location

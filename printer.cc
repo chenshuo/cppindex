@@ -1,4 +1,4 @@
-#include "record.pb.h"
+#include "build/record.pb.h"
 
 #include "llvm/Support/MD5.h"
 #include "clang/Rewrite/Core/Rewriter.h"
@@ -37,7 +37,7 @@ class Formatter
     clang::RewriteBuffer rb;
     rb.Initialize(text.data(), text.data() + text.size());
 
-    srcuri.remove_prefix(4);
+    srcuri.remove_prefix(4); // "src:"
     std::string filename = srcuri.ToString();
     formatPreprocess(filename, &rb);
 
