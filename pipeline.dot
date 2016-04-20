@@ -1,0 +1,10 @@
+digraph G {
+rankdir=LR;
+"foo.c" -> I1 -> "foo.c.cindex" -> J -> leveldb
+"bar.c" -> I2 -> "bar.c.cindex" -> J
+leveldb -> P -> "HTML"
+I1[label="indexer", shape=box]
+I2[label="indexer", shape=box]
+J[label="joiner", shape=box]
+P[label="printer", shape=box]
+}
