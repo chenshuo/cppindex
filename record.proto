@@ -61,6 +61,8 @@ message Function {
   // when usage != kDefine, ref_file and ref_lineno are usually defined, except for __builtin_memcpy etc.
   repeated string ref_file = 8;
   repeated int32 ref_lineno = 9;
+  // optional string decl_file = 10;
+  // optional int32 decl_lineno = 11;
 }
 
 ////////////////////////////////////////////////////////////

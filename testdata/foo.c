@@ -1,4 +1,3 @@
-
 void extern_used()
 {
 }

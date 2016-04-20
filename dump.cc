@@ -87,14 +87,25 @@ void dumpdb(const char* key)
 
 int main(int argc, char* argv[])
 {
-  if (argc == 2)
+  if (argc == 1)
   {
-    Reader reader(argv[1]);
-    string key, value;
-    while (reader.read(&key, &value))
+    dumpdb(NULL);
+  }
+  else
+  {
+    if (strchr(argv[1], ':'))
     {
-      printf("KEY %s %zd\n", key.c_str(), value.size());
-      print(key, value); printf("\n");
+      dumpdb(argv[1]);
+    }
+    else
+    {
+      Reader reader(argv[1]);
+      string key, value;
+      while (reader.read(&key, &value))
+      {
+        printf("KEY %s %zd\n", key.c_str(), value.size());
+        print(key, value); printf("\n");
+      }
     }
   }
 }

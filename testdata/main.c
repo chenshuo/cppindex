@@ -1,4 +1,3 @@
-
 extern void extern_used();
 extern void extern_notused();
 void notused();

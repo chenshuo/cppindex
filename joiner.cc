@@ -7,7 +7,8 @@
 
 #include "muduo/base/Logging.h"
 
-#include <stdio.h>
+//#include <stdio.h>
+#include <iostream>
 
 namespace indexer
 {
@@ -38,12 +39,16 @@ class Joiner
 
   void join(char* argv[])
   {
+    LOG_INFO << "reading";
     for (char** file = argv; *file; ++file)
     {
       add(*file);
     }
+    LOG_INFO << inputs_.size() << " inputs";
 
     resolve();
+    merge();
+    LOG_INFO << "done";
   }
 
  private:
@@ -54,7 +59,7 @@ class Joiner
 
   void add(const char* file)
   {
-    printf("add %s ", file);
+    std::cout << "add " << file;
     Entries entries;
 
     Reader reader(file);
@@ -64,7 +69,7 @@ class Joiner
       assert(entries.find(key) == entries.end());
       entries[key] = value;
     }
-    printf("%zd\n", entries.size());
+    std::cout << " " << entries.size() << "entries\n";
     proto::CompilationUnit cu = getCompilationUnit(entries);
     string main = cu.main_file();
     assert(inputs_.find(main) == inputs_.end());
@@ -84,22 +89,25 @@ class Joiner
   void resolve()
   {
     FunctionMap functions = getGlobalFunctions();
-    LOG_INFO << "global functions " << functions.size();
     resolveFunctions(functions);
     LOG_INFO << "undefined functions " << undefinedFunctions_.size();
+    for (auto& func : undefinedFunctions_)
+    {
+      std::cout << "undefined " << func.first << " of " << func.second << "\n";
+    }
     for (auto& func : functions)
     {
       if (func.second.ref_file_size() == 1)
       {
         // FIXME: update link of define to the only usage.
-        LOG_INFO << "global function " << func.second.DebugString();
+        LOG_INFO << "global function used once " << func.second.DebugString();
       }
     }
-    merge();
   }
 
   FunctionMap getGlobalFunctions()
   {
+    LOG_INFO << "getGlobalFunctions";
     FunctionMap functions;
     for (const auto& input : inputs_)
     {
@@ -109,11 +117,18 @@ class Joiner
       {
         if (func.storage_class() != proto::kStatic)
         {
-          assert(functions.find(func.name()) == functions.end());
+          auto it = functions.find(func.name());
+          if (it != functions.end())
+          {
+            std::cout << "duplicate global function: " << func.name()
+                     << " THIS: " << func.ShortDebugString()
+                     << " PREV: " << it->second.ShortDebugString() << "\n";
+          }
           functions[func.name()] = func;
         }
       }
     }
+    LOG_INFO << "global functions " << functions.size();
     return functions;
   }
 
@@ -130,6 +145,7 @@ class Joiner
         allStaticFunctions_[func.name()]++;
         if (allStaticFunctions_[func.name()] > 1)
         {
+          // if a header defines a static inline function, we will see a lot:
           // LOG_INFO << "duplicate static function: " << func.name();
         }
       }
@@ -144,6 +160,7 @@ class Joiner
 
   void resolveFunctions(FunctionMap& globalFunctions)
   {
+    // FIXME: resolve function by sharing declare
     for (auto& input : inputs_)
     {
       Entries& entries = input.second;
@@ -158,6 +175,7 @@ class Joiner
 
         proto::Functions functions;
         CHECK(functions.ParseFromString(file->second));
+        assert(file->first.substr(strlen("functions:")) == functions.filename());
         // for each function in file
         for (proto::Function& func : *functions.mutable_functions())
         {
@@ -175,21 +193,36 @@ class Joiner
             // use or declare
             if (func.storage_class() == proto::kStatic)
             {
-              assert(globalFunctions.find(func.name()) == globalFunctions.end());
-              auto it = staticFunctions.find(func.name());
-              assert(it != staticFunctions.end());
-              proto::Function& define = it->second;
-              foundDefine(&func, &define);
-            }
-            else
-            {
-              // some functions are declared as extern but defined as static
-              auto it = staticFunctions.find(func.name());
+              auto it = globalFunctions.find(func.name());
+              if (it != globalFunctions.end())
+              {
+                std::cout << "global function found for static: DEFINE " << it->second.ShortDebugString()
+                          << " USE " << func.ShortDebugString()
+                          << " IN " << functions.filename() << "\n";
+              }
+              it = staticFunctions.find(func.name());
               if (it != staticFunctions.end())
               {
                 proto::Function& define = it->second;
                 foundDefine(&func, &define);
+              }
+              else
+              {
+                std::cout << "undefined static function " << func.ShortDebugString() << " IN " << functions.filename()
+                          << " CU " << input.first << "\n";
+              }
+            }
+            else
+            {
+              // use of global function
+              auto it = staticFunctions.find(func.name());
+              if (it != staticFunctions.end())
+              {
+                // some functions are declared as extern but defined as static
+                proto::Function& define = it->second;
+                foundDefine(&func, &define);
                 LOG_TRACE << func.name() << " was defined as static, but used as " << func.DebugString();
+                assert(globalFunctions.find(func.name()) == globalFunctions.end());
               }
               else
               {
@@ -199,7 +232,7 @@ class Joiner
                   proto::Function& define = it->second;
                   foundDefine(&func, &define);
                 }
-                else
+                else if (!leveldb::Slice(func.name()).starts_with("__compiletime_assert_"))  // KERNEL HACK
                 {
                   LOG_TRACE << "Undefined function " << func.name() << " used in " << input.first;
                   undefinedFunctions_[func.name()] = func.signature();
@@ -240,6 +273,7 @@ class Joiner
     Entries mains;
     // key is file name
     std::map<std::string, MD5String> md5s;
+    LOG_INFO << "merging";
     for (const auto& input : inputs_)
     {
       const Entries& entries = input.second;
@@ -276,7 +310,10 @@ class Joiner
         }
       }
     }
+
+    LOG_INFO << "writing";
     Sink sink(db_.get());
+    // Sink sink("output");
     for (const auto& it : sources)
     {
       sink.writeOrDie(it.first, it.second);
@@ -307,7 +344,7 @@ class Joiner
       if (it->second != entry.second)
       {
         if (entry.first.find("<built-in>") == string::npos)
-          LOG_INFO << "changed " << entry.first;
+          std::cout << "changed " << entry.first << "\n";
       }
     }
   }

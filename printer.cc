@@ -40,6 +40,7 @@ class Formatter
     srcuri.remove_prefix(4); // "src:"
     std::string filename = srcuri.ToString();
     formatPreprocess(filename, &rb);
+    formatFunctions(filename, &rb);
 
     int numlines = escapeHtml(text, &rb);
     std::vector<std::string> headers;
@@ -47,10 +48,12 @@ class Formatter
     headers.push_back(filename);
     headers.push_back(R"(</title><link rel="stylesheet" type="text/css" href="../source.css">)");
     headers.push_back("</head>\n<body><table style=\"border-spacing:10px 0px\"><tr><td>\n");
-    for (int i = 0; i < numlines; ++i)
+    for (int line = 1; line <= numlines; ++line)
     {
       char buf[256];
-      snprintf(buf, sizeof buf, R"(<span class="lineno"><a href="#L%d" name="L%d" tabindex="-1">%d</a></span>)", i+1, i+1, i+1);
+      snprintf(buf, sizeof buf,
+               R"(<span class="lineno"><a href="#L%d" name="L%d" tabindex="-1">%d</a></span>)",
+               line, line, line);
       headers.push_back(buf);
     }
     headers.push_back("</td>\n<td><pre>");
@@ -70,7 +73,7 @@ class Formatter
       return;
     indexer::proto::Preprocess pp;
     if (!pp.ParseFromString(content))
-      return;
+      assert(0);
     assert(filename == pp.filename());
     for (const auto& inc : pp.includes())
     {
@@ -101,7 +104,29 @@ class Formatter
     }
   }
 
-  std::string makeHref(const std::string& filename, int lineno = 0)
+  void formatFunctions(const std::string& filename, clang::RewriteBuffer* rb)
+  {
+    std::string content;
+    leveldb::Status s = db_->Get(leveldb::ReadOptions(), "functions:" + filename, &content);
+    if (!s.ok())
+      return;
+    indexer::proto::Functions functions;
+    if (!functions.ParseFromString(content))
+      assert(0);
+    assert(filename == functions.filename());
+    for (const auto& func : functions.functions())
+    {
+      if (!func.name_range().anchor() && func.ref_file_size() == 1 && func.ref_lineno_size() == 1)
+      {
+        rb->InsertTextBefore(func.name_range().begin().offset(),
+                             makeHref(func.ref_file().Get(0), func.ref_lineno().Get(0)));
+        rb->InsertTextAfter(func.name_range().end().offset(), "</a>");
+      }
+    }
+
+  }
+
+  static std::string makeHref(const std::string& filename, int lineno = 0)
   {
     std::string result = "<a href=\"" + getHtmlFilename(filename);
     if (lineno > 0)
@@ -113,7 +138,7 @@ class Formatter
     return result + "\">";
   }
 
-  std::string getHtmlFilename(const std::string& srcfile)
+  static std::string getHtmlFilename(const std::string& srcfile)
   {
     std::string result = srcfile;
     if (!result.empty())
@@ -159,7 +184,24 @@ class Formatter
     // FIXME: last line without EOL
     return lines;
   }
+
 };
+
+std::string escapeHtml(const std::string& text)
+{
+  std::string html;
+  for (char ch : text)
+  {
+    switch (ch)
+    {
+      case '<': html += "&lt;"; break;
+      case '>': html += "&gt;"; break;
+      case '&': html += "&amp;"; break;
+      default: html += ch;
+    }
+  }
+  return html;
+}
 
 void save(const std::string& file, const std::string& content)
 {
@@ -193,17 +235,26 @@ int main(int argc, char* argv[])
       std::unique_ptr<leveldb::Iterator> it(db->NewIterator(leveldb::ReadOptions()));
       std::string html;
       std::unordered_set<std::string> files;
+      std::string index_page = "<html><body><ul>";
       for (it->Seek("src:");
-           it->Valid() && it->key().ToString() < "src:\xff";
+           it->Valid() && it->key().ToString() < "src:\xff";  // FIXME signed char?
            it->Next())
       {
-        std::string file = fmt.format(it->key(), it->value(), &html);
+        leveldb::Slice srcuri = it->key();
+
+        std::string file = fmt.format(srcuri, it->value(), &html);
         if (!files.insert(file).second)
-          LOG_WARN << "Rewrite " << file << " for " << it->key().ToString();
+          LOG_WARN << "Rewrite " << file << " for " << srcuri.ToString();
         LOG_DEBUG << file;
         if (!file.empty())
+        {
           save(file, html);
+        }
+        srcuri.remove_prefix(4); // "src:"
+        index_page += R"(<li><a href=")" + file + R"(">)" + escapeHtml(srcuri.ToString()) + "</a></li>\n";
       }
+      index_page += "</ul></body></html>";
+      save("index.html", index_page);
     }
   }
   google::protobuf::ShutdownProtobufLibrary();
