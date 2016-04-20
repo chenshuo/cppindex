@@ -13,7 +13,7 @@
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 
-// #include "leveldb/db.h"
+#include "leveldb/db.h"
 
 #include "muduo/base/Logging.h"
 
@@ -142,7 +142,7 @@ public:
     }
     printf("CompilationUnit %d bytes %d public functions\n", cu.ByteSize(), cu.functions_size());
     // printf("%s\n", cu.DebugString().c_str());
-    std::string uri = "main:";
+    std::string uri = "main:" + cu.main_file();
     sink->writeOrDie(uri, cu.SerializeAsString());
   }
 

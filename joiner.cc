@@ -47,7 +47,10 @@ class Joiner
   }
 
  private:
+  // key is uri
   typedef std::map<string, string> Entries;
+  // key is function name
+  typedef std::map<string, proto::Function> FunctionMap;
 
   void add(const char* file)
   {
@@ -62,29 +65,46 @@ class Joiner
       entries[key] = value;
     }
     printf("%zd\n", entries.size());
-    proto::CompilationUnit cu;
-    CHECK(cu.ParseFromString(getOrDie(entries, "main:")));
+    proto::CompilationUnit cu = getCompilationUnit(entries);
     string main = cu.main_file();
-    assert(input.find(main) == input.end());
-    input[main] = std::move(entries);
+    assert(inputs_.find(main) == inputs_.end());
+    inputs_[main] = std::move(entries);
+  }
+
+  proto::CompilationUnit getCompilationUnit(const Entries& entries)
+  {
+    proto::CompilationUnit cu;
+    auto it = entries.lower_bound("main:");
+    assert(it != entries.end());
+    assert(leveldb::Slice(it->first).starts_with("main:"));
+    CHECK(cu.ParseFromString(it->second));
+    return cu;
   }
 
   void resolve()
   {
-    std::map<string, proto::Function> functions = getGlobalFunctions();
+    FunctionMap functions = getGlobalFunctions();
     LOG_INFO << "global functions " << functions.size();
     resolveFunctions(functions);
+    LOG_INFO << "undefined functions " << undefinedFunctions_.size();
+    for (auto& func : functions)
+    {
+      if (func.second.ref_file_size() == 1)
+      {
+        // FIXME: update link of define to the only usage.
+        LOG_INFO << "global function " << func.second.DebugString();
+      }
+    }
     merge();
   }
 
-  std::map<string, proto::Function> getGlobalFunctions()
+  FunctionMap getGlobalFunctions()
   {
-    std::map<string, proto::Function> functions;
-    for (const auto& file : input)
+    FunctionMap functions;
+    for (const auto& input : inputs_)
     {
-      const Entries& entries = file.second;
-      proto::CompilationUnit cu;
-      CHECK(cu.ParseFromString(getOrDie(entries, "main:")));
+      const Entries& entries = input.second;
+      proto::CompilationUnit cu = getCompilationUnit(entries);
       for (const proto::Function& func : cu.functions())
       {
         if (func.storage_class() != proto::kStatic)
@@ -97,43 +117,47 @@ class Joiner
     return functions;
   }
 
-  std::map<string, proto::Function> getStaticFunctions(const proto::CompilationUnit& cu,
-                                                       const std::map<string, proto::Function>& globalFunctions)
+  FunctionMap getStaticFunctions(const proto::CompilationUnit& cu,
+                                 const FunctionMap& globalFunctions)
   {
-      std::map<string, proto::Function> staticFunctions;
-      for (const proto::Function& func : cu.functions())
+    FunctionMap staticFunctions;
+    for (const proto::Function& func : cu.functions())
+    {
+      if (func.storage_class() == proto::kStatic)
       {
-        if (func.storage_class() == proto::kStatic)
+        assert(staticFunctions.find(func.name()) == staticFunctions.end());
+        staticFunctions[func.name()] = func;
+        allStaticFunctions_[func.name()]++;
+        if (allStaticFunctions_[func.name()] > 1)
         {
-          assert(staticFunctions.find(func.name()) == staticFunctions.end());
-          staticFunctions[func.name()] = func;
-        }
-        else
-        {
-          assert(staticFunctions.find(func.name()) == staticFunctions.end());
-          assert(globalFunctions.find(func.name()) != globalFunctions.end());
+          // LOG_INFO << "duplicate static function: " << func.name();
         }
       }
-      return staticFunctions;
+      else
+      {
+        assert(staticFunctions.find(func.name()) == staticFunctions.end());
+        assert(globalFunctions.find(func.name()) != globalFunctions.end());
+      }
+    }
+    return staticFunctions;
   }
 
-  void resolveFunctions(const std::map<string, proto::Function>& globalFunctions)
+  void resolveFunctions(FunctionMap& globalFunctions)
   {
-    for (const auto& file : input)
+    for (auto& input : inputs_)
     {
-      const Entries& entries = file.second;
-      proto::CompilationUnit cu;
-      CHECK(cu.ParseFromString(getOrDie(entries, "main:")));
-      const std::map<string, proto::Function> staticFunctions = getStaticFunctions(cu, globalFunctions);
+      Entries& entries = input.second;
+      proto::CompilationUnit cu = getCompilationUnit(entries);
+      FunctionMap staticFunctions = getStaticFunctions(cu, globalFunctions);
 
       // for each "functions:" in this CU
-      for (auto it = entries.lower_bound("functions:"); it != entries.end(); ++it)
+      for (auto file = entries.lower_bound("functions:"); file != entries.end(); ++file)
       {
-        if (!leveldb::Slice(it->first).starts_with("functions:"))
+        if (!leveldb::Slice(file->first).starts_with("functions:"))
           break;
 
         proto::Functions functions;
-        CHECK(functions.ParseFromString(it->second));
+        CHECK(functions.ParseFromString(file->second));
         // for each function in file
         for (proto::Function& func : *functions.mutable_functions())
         {
@@ -154,43 +178,138 @@ class Joiner
               assert(globalFunctions.find(func.name()) == globalFunctions.end());
               auto it = staticFunctions.find(func.name());
               assert(it != staticFunctions.end());
-              const proto::Function& define = it->second;
-              func.set_def_file(define.name_range().filename());
-              func.set_def_lineno(define.name_range().begin().lineno());
+              proto::Function& define = it->second;
+              foundDefine(&func, &define);
             }
             else
             {
-              assert(staticFunctions.find(func.name()) == staticFunctions.end());
-              auto it = globalFunctions.find(func.name());
-              if (it != globalFunctions.end())
+              // some functions are declared as extern but defined as static
+              auto it = staticFunctions.find(func.name());
+              if (it != staticFunctions.end())
               {
-                const proto::Function& define = it->second;
-                func.set_def_file(define.name_range().filename());
-                func.set_def_lineno(define.name_range().begin().lineno());
+                proto::Function& define = it->second;
+                foundDefine(&func, &define);
+                LOG_TRACE << func.name() << " was defined as static, but used as " << func.DebugString();
               }
               else
               {
-                LOG_WARN << "Undefined function " << func.name() << " used in " << file.first;
+                it = globalFunctions.find(func.name());
+                if (it != globalFunctions.end())
+                {
+                  proto::Function& define = it->second;
+                  foundDefine(&func, &define);
+                }
+                else
+                {
+                  LOG_TRACE << "Undefined function " << func.name() << " used in " << input.first;
+                  undefinedFunctions_[func.name()] = func.signature();
+                }
               }
             }
           }
         }
-        // printf("resolved functions for %s\n%s\n", it->first.c_str(),
+        // printf("resolved functions for %s\n%s\n", cu->first.c_str(),
         //        functions.DebugString().c_str());
-        // FIXME: save functions
+        file->second = functions.SerializeAsString();
+      }
+      for (auto& func : staticFunctions)
+      {
+        // FIXME: update static function defines
+        if (func.second.ref_file_size() == 1)
+        {
+          // FIXME: update link of define to the only usage.
+          // LOG_INFO << "static function " << func.second.DebugString();
+        }
       }
     }
   }
 
-  void merge()
+  void foundDefine(proto::Function* func, proto::Function* define)
   {
+    assert(func->ref_file_size() == 0);
+    assert(func->ref_lineno_size() == 0);
+    func->add_ref_file(define->name_range().filename());
+    func->add_ref_lineno(define->name_range().begin().lineno());
   }
 
-  static const string& getOrDie(const Entries& entries, const string& uri)
+  void merge()
   {
-    auto it = entries.find(uri);
-    assert(it != entries.end());
-    return it->second;
+    Entries sources;
+    Entries functions;
+    Entries preprocess;
+    Entries mains;
+    // key is file name
+    std::map<std::string, MD5String> md5s;
+    for (const auto& input : inputs_)
+    {
+      const Entries& entries = input.second;
+      for (const auto& entry : entries)
+      {
+        leveldb::Slice key(entry.first);
+        if (key.starts_with("src:"))
+        {
+          update(&sources, entry);
+          key.remove_prefix(4); // "src:"
+          md5s[key.ToString()] = md5String(entry.second);
+        }
+        else if (key.starts_with("functions:"))
+        {
+          update(&functions, entry);
+        }
+        else if (key.starts_with("prep:"))
+        {
+          update(&preprocess, entry);
+        }
+        else if (key.starts_with("main:"))
+        {
+          update(&mains, entry);
+        }
+        else if (key.starts_with("digests:"))
+        {
+          proto::Digests digests;
+          CHECK(digests.ParseFromString(entry.second));
+          // FIXME: verify digests
+        }
+        else
+        {
+          LOG_WARN << "Unknown uri " << entry.first;
+        }
+      }
+    }
+    Sink sink(db_.get());
+    for (const auto& it : sources)
+    {
+      sink.writeOrDie(it.first, it.second);
+    }
+    for (const auto& it : functions)
+    {
+      sink.writeOrDie(it.first, it.second);
+    }
+    for (const auto& it : preprocess)
+    {
+      sink.writeOrDie(it.first, it.second);
+    }
+    for (const auto& it : mains)
+    {
+      sink.writeOrDie(it.first, it.second);
+    }
+  }
+
+  static void update(Entries* entries, const Entries::value_type& entry)
+  {
+    auto it = entries->find(entry.first);
+    if (it == entries->end())
+    {
+      entries->insert(entry);
+    }
+    else
+    {
+      if (it->second != entry.second)
+      {
+        if (entry.first.find("<built-in>") == string::npos)
+          LOG_INFO << "changed " << entry.first;
+      }
+    }
   }
 
   void CHECK(bool ok)
@@ -198,6 +317,7 @@ class Joiner
     if (!ok)
       abort();
   }
+
   void saveSourcesDb(const std::string& mainFile)
   {
     std::string content;
@@ -275,13 +395,17 @@ class Joiner
   }
 
   std::unique_ptr<leveldb::DB> db_;
-  std::map<string, Entries> input;
+  // key is compilation unit name
+  std::map<string, Entries> inputs_;
+  // key is function name
+  std::map<string, int> allStaticFunctions_;
+  std::map<string, string> undefinedFunctions_;
   static constexpr const char* kSrcmd5 = "srcmd5:";
 };
 }
 
 int main(int argc, char* argv[])
 {
-  indexer::Joiner j(false);
+  indexer::Joiner j(true);
   j.join(argv+1);
 }

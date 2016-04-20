@@ -13,33 +13,51 @@ inline MD5String md5String(const std::string& text)
 class Sink : boost::noncopyable
 {
  public:
+  explicit Sink(leveldb::DB* db)
+    : db_(db)
+  {
+    assert(db_);
+  }
+
   explicit Sink(const char* output)
     : out_(::fopen(output, "wb"))  // FIXME: CHECK_NOTNULL
   {
+    assert(out_);
     printf("Sink %s\n", output);
   }
+
   ~Sink()
   {
-    ::fclose(out_);
+    if (out_)
+      ::fclose(out_);
   }
 
   void writeOrDie(const string& key, const string& value)
   {
+    if (db_)
     {
+      leveldb::Status s = db_->Put(leveldb::WriteOptions(), key, value);
+      assert(s.ok());
+    }
+    else
+    {
+      {
       int key_len = key.size();
       fwrite(&key_len, 1, sizeof key_len, out_);
       fwrite(key.data(), 1, key.size(), out_);
-    }
-    {
+      }
+      {
       int value_len = value.size();
       fwrite(&value_len, 1, sizeof value_len, out_);
       fwrite(value.data(), 1, value.size(), out_);
-      printf("write %s %d\n", key.c_str(), value_len);
+      }
     }
+    printf("write %s %zd\n", key.c_str(), value.size());
   }
 
  private:
-  FILE* out_;
+  leveldb::DB* db_ = nullptr;
+  FILE* out_ = nullptr;
 };
 
 class Reader : boost::noncopyable
