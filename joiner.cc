@@ -1,14 +1,16 @@
 #include "leveldb/db.h"
 #include "llvm/Support/MD5.h"
 #include "build/record.pb.h"
-#include <memory>
 
 #include <boost/noncopyable.hpp>
 
 #include "muduo/base/Logging.h"
+#include "muduo/base/Timestamp.h"
 
 //#include <stdio.h>
 #include <iostream>
+#include <memory>
+#include <unordered_set>
 
 namespace indexer
 {
@@ -40,15 +42,18 @@ class Joiner
   void join(char* argv[])
   {
     LOG_INFO << "reading";
+    muduo::Timestamp start(muduo::Timestamp::now());
     for (char** file = argv; *file; ++file)
     {
       add(*file);
     }
-    LOG_INFO << inputs_.size() << " inputs";
+    LOG_INFO << inputs_.size() << " inputs, "
+             << timeDifference(muduo::Timestamp::now(), start) << " sec";
 
     resolve();
     merge();
-    LOG_INFO << "done";
+    LOG_INFO << "done "
+             << timeDifference(muduo::Timestamp::now(), start) << " sec";
   }
 
  private:
@@ -59,7 +64,6 @@ class Joiner
 
   void add(const char* file)
   {
-    std::cout << "add " << file;
     Entries entries;
 
     Reader reader(file);
@@ -69,7 +73,8 @@ class Joiner
       assert(entries.find(key) == entries.end());
       entries[key] = value;
     }
-    std::cout << " " << entries.size() << "entries\n";
+    std::cout << "add " << file
+              << " " << entries.size() << " entries\n";
     proto::CompilationUnit cu = getCompilationUnit(entries);
     string main = cu.main_file();
     assert(inputs_.find(main) == inputs_.end());
@@ -91,9 +96,12 @@ class Joiner
     FunctionMap functions = getGlobalFunctions();
     resolveFunctions(functions);
     LOG_INFO << "undefined functions " << undefinedFunctions_.size();
-    for (auto& func : undefinedFunctions_)
+    if (muduo::Logger::logLevel() <= muduo::Logger::DEBUG)
     {
-      std::cout << "undefined " << func.first << " of " << func.second << "\n";
+      for (auto& func : undefinedFunctions_)
+      {
+        std::cout << "undefined " << func.first << " of " << func.second << "\n";
+      }
     }
     for (auto& func : functions)
     {
@@ -108,6 +116,7 @@ class Joiner
   FunctionMap getGlobalFunctions()
   {
     LOG_INFO << "getGlobalFunctions";
+    muduo::Timestamp start(muduo::Timestamp::now());
     FunctionMap functions;
     for (const auto& input : inputs_)
     {
@@ -120,15 +129,16 @@ class Joiner
           auto it = functions.find(func.name());
           if (it != functions.end())
           {
-            std::cout << "duplicate global function: " << func.name()
-                     << " THIS: " << func.ShortDebugString()
-                     << " PREV: " << it->second.ShortDebugString() << "\n";
+            std::cout << "duplicate global function: " << func.name() << "\n"
+                     << "    THIS " << func.ShortDebugString() << "\n"
+                     << "    PREV " << it->second.ShortDebugString() << "\n";
           }
           functions[func.name()] = func;
         }
       }
     }
-    LOG_INFO << "global functions " << functions.size();
+    LOG_INFO << "global functions " << functions.size() << ", "
+             << timeDifference(muduo::Timestamp::now(), start) << " sec";
     return functions;
   }
 
@@ -160,11 +170,13 @@ class Joiner
 
   void resolveFunctions(FunctionMap& globalFunctions)
   {
+    muduo::Timestamp start(muduo::Timestamp::now());
     // FIXME: resolve function by sharing declare
     for (auto& input : inputs_)
     {
       Entries& entries = input.second;
       proto::CompilationUnit cu = getCompilationUnit(entries);
+      assert(cu.main_file() == input.first);
       FunctionMap staticFunctions = getStaticFunctions(cu, globalFunctions);
 
       // for each "functions:" in this CU
@@ -173,77 +185,7 @@ class Joiner
         if (!leveldb::Slice(file->first).starts_with("functions:"))
           break;
 
-        proto::Functions functions;
-        CHECK(functions.ParseFromString(file->second));
-        assert(file->first.substr(strlen("functions:")) == functions.filename());
-        // for each function in file
-        for (proto::Function& func : *functions.mutable_functions())
-        {
-          if (func.usage() == proto::kDefine)
-          {
-            if (func.storage_class() == proto::kStatic)
-            {
-              auto it = staticFunctions.find(func.name());
-              assert(it != staticFunctions.end());
-              // FIXME more asserts
-            }
-          }
-          else
-          {
-            // use or declare
-            if (func.storage_class() == proto::kStatic)
-            {
-              auto it = globalFunctions.find(func.name());
-              if (it != globalFunctions.end())
-              {
-                std::cout << "global function found for static: DEFINE " << it->second.ShortDebugString()
-                          << " USE " << func.ShortDebugString()
-                          << " IN " << functions.filename() << "\n";
-              }
-              it = staticFunctions.find(func.name());
-              if (it != staticFunctions.end())
-              {
-                proto::Function& define = it->second;
-                foundDefine(&func, &define);
-              }
-              else
-              {
-                std::cout << "undefined static function " << func.ShortDebugString() << " IN " << functions.filename()
-                          << " CU " << input.first << "\n";
-              }
-            }
-            else
-            {
-              // use of global function
-              auto it = staticFunctions.find(func.name());
-              if (it != staticFunctions.end())
-              {
-                // some functions are declared as extern but defined as static
-                proto::Function& define = it->second;
-                foundDefine(&func, &define);
-                LOG_TRACE << func.name() << " was defined as static, but used as " << func.DebugString();
-                assert(globalFunctions.find(func.name()) == globalFunctions.end());
-              }
-              else
-              {
-                it = globalFunctions.find(func.name());
-                if (it != globalFunctions.end())
-                {
-                  proto::Function& define = it->second;
-                  foundDefine(&func, &define);
-                }
-                else if (!leveldb::Slice(func.name()).starts_with("__compiletime_assert_"))  // KERNEL HACK
-                {
-                  LOG_TRACE << "Undefined function " << func.name() << " used in " << input.first;
-                  undefinedFunctions_[func.name()] = func.signature();
-                }
-              }
-            }
-          }
-        }
-        // printf("resolved functions for %s\n%s\n", cu->first.c_str(),
-        //        functions.DebugString().c_str());
-        file->second = functions.SerializeAsString();
+        crossReferenceFunctions(globalFunctions, cu.main_file(), staticFunctions, file);
       }
       for (auto& func : staticFunctions)
       {
@@ -255,6 +197,88 @@ class Joiner
         }
       }
     }
+    LOG_INFO << "resolveFunctions "
+             << timeDifference(muduo::Timestamp::now(), start) << " sec";
+  }
+
+  void crossReferenceFunctions(FunctionMap& globalFunctions, const string cu,
+                               FunctionMap& staticFunctions, Entries::iterator file)
+  {
+    proto::Functions functions;
+    CHECK(functions.ParseFromString(file->second));
+    assert(file->first.substr(strlen("functions:")) == functions.filename());
+    // for each function in file
+    for (proto::Function& func : *functions.mutable_functions())
+    {
+      if (func.usage() == proto::kDefine)
+      {
+        if (func.storage_class() == proto::kStatic)
+        {
+          auto it = staticFunctions.find(func.name());
+          assert(it != staticFunctions.end());
+          // FIXME more asserts
+        }
+      }
+      else
+      {
+        // use or declare
+        if (func.storage_class() == proto::kStatic)
+        {
+          auto it = staticFunctions.find(func.name());
+          if (it != staticFunctions.end())
+          {
+            proto::Function& define = it->second;
+            foundDefine(&func, &define);
+          }
+          else
+          {
+            std::cout << "undefined static function " << func.ShortDebugString()
+                      << " IN " << functions.filename()
+                      << " CU " << cu << "\n";
+          }
+          it = globalFunctions.find(func.name());
+          if (it != globalFunctions.end())
+          {
+            std::cout << "global function hidden by static: "<< func.name()
+                      << " IN " << functions.filename()
+                      << " CU " << cu << "\n"
+                      << "    DEF " << it->second.ShortDebugString() << "\n"
+                      << "    USE " << func.ShortDebugString() << "\n";
+          }
+        }
+        else
+        {
+          // use of global function
+          auto it = staticFunctions.find(func.name());
+          if (it != staticFunctions.end())
+          {
+            // some functions are declared as extern but defined as static
+            proto::Function& define = it->second;
+            foundDefine(&func, &define);
+            LOG_TRACE << func.name() << " was defined as static, but used as " << func.DebugString();
+            assert(globalFunctions.find(func.name()) == globalFunctions.end());
+          }
+          else
+          {
+            it = globalFunctions.find(func.name());
+            if (it != globalFunctions.end())
+            {
+              proto::Function& define = it->second;
+              foundDefine(&func, &define);
+            }
+            else if (func.usage() == proto::kUse &&
+                     !leveldb::Slice(func.name()).starts_with("__compiletime_assert_"))  // KERNEL HACK
+            {
+              LOG_TRACE << "Undefined function " << func.name() << " used in " << cu;
+              undefinedFunctions_[func.name()] = func.signature();
+            }
+          }
+        }
+      }
+    }
+    // printf("resolved functions for %s\n%s\n", cu->first.c_str(),
+    //        functions.DebugString().c_str());
+    file->second = functions.SerializeAsString();
   }
 
   void foundDefine(proto::Function* func, proto::Function* define)
@@ -274,6 +298,7 @@ class Joiner
     // key is file name
     std::map<std::string, MD5String> md5s;
     LOG_INFO << "merging";
+    muduo::Timestamp start(muduo::Timestamp::now());
     for (const auto& input : inputs_)
     {
       const Entries& entries = input.second;
@@ -310,8 +335,11 @@ class Joiner
         }
       }
     }
+    LOG_INFO << "merge took  "
+             << timeDifference(muduo::Timestamp::now(), start) << " sec";
 
     LOG_INFO << "writing";
+    start = muduo::Timestamp::now();
     Sink sink(db_.get());
     // Sink sink("output");
     for (const auto& it : sources)
@@ -330,9 +358,11 @@ class Joiner
     {
       sink.writeOrDie(it.first, it.second);
     }
+    LOG_INFO << "write took "
+             << timeDifference(muduo::Timestamp::now(), start) << " sec";
   }
 
-  static void update(Entries* entries, const Entries::value_type& entry)
+  void update(Entries* entries, const Entries::value_type& entry)
   {
     auto it = entries->find(entry.first);
     if (it == entries->end())
@@ -343,8 +373,20 @@ class Joiner
     {
       if (it->second != entry.second)
       {
-        if (entry.first.find("<built-in>") == string::npos)
+        if (!changed_.count(entry.first))
+        {
           std::cout << "changed " << entry.first << "\n";
+          if (muduo::Logger::logLevel() <= muduo::Logger::DEBUG ||
+              entry.first == printChanged_)
+          {
+            printf("OLD ========== {\n");
+            print(entry.first, it->second);
+            printf("NEW } ========== {\n");
+            print(entry.first, entry.second);
+            printf("END }\n");
+          }
+          changed_.insert(entry.first);
+        }
       }
     }
   }
@@ -355,90 +397,18 @@ class Joiner
       abort();
   }
 
-  void saveSourcesDb(const std::string& mainFile)
-  {
-    std::string content;
-
-    // read md5 from db
-    leveldb::Status s = db_->Get(leveldb::ReadOptions(), kSrcmd5, &content);
-    proto::Digests digests;
-    std::map<std::string, MD5String> md5s;
-    if (s.ok() && digests.ParseFromString(content))
-    {
-      for (auto it : digests.digests())
-      {
-        md5s[it.filename()] = it.md5();
-      }
-    }
-
-    std::map<std::string, MD5String> mymd5s;
-    // update/save source file when md5 is different
-    std::map<std::string, std::string> files;
-    for (const auto& src : files)
-    {
-      MD5String md5 = md5String(src.second);
-      mymd5s[src.first] = md5;
-      MD5String& origmd5 = md5s[src.first];
-      if (origmd5 != md5)
-      {
-        std::string uri = "src:" + src.first;
-        if (!origmd5.empty())
-        {
-          LOG_WARN << "Different content for " << uri;
-        }
-        else
-        {
-          LOG_INFO << "Add " << uri;
-        }
-        origmd5 = md5;
-        s = db_->Put(leveldb::WriteOptions(), uri, src.second);
-        assert(s.ok());
-      }
-    }
-
-    // update digests
-    digests.Clear();
-    for (const auto& d : md5s)
-    {
-      auto* digest = digests.add_digests();
-      digest->set_filename(d.first);
-      llvm::StringRef str = d.second.str();
-      digest->set_md5(str.data(), str.size());
-    }
-    if (!digests.SerializeToString(&content))
-    {
-      assert(false && "Digests::Serialize");
-    }
-    s = db_->Put(leveldb::WriteOptions(), kSrcmd5, content);
-    assert(s.ok());
-
-    std::string uri = "main:" + mainFile;
-
-    // update main:
-    digests.Clear();
-    for (const auto& d : mymd5s)
-    {
-      auto* digest = digests.add_digests();
-      digest->set_filename(d.first);
-      llvm::StringRef str = d.second.str();
-      digest->set_md5(str.data(), str.size());
-    }
-    if (!digests.SerializeToString(&content))
-    {
-      assert(false && "Digests::Serialize");
-    }
-    s = db_->Put(leveldb::WriteOptions(), uri, content);
-    assert(s.ok());
-  }
-
   std::unique_ptr<leveldb::DB> db_;
   // key is compilation unit name
   std::map<string, Entries> inputs_;
   // key is function name
   std::map<string, int> allStaticFunctions_;
   std::map<string, string> undefinedFunctions_;
+  std::unordered_set<string> changed_;
   static constexpr const char* kSrcmd5 = "srcmd5:";
+  static const string printChanged_;
 };
+
+const string Joiner::printChanged_ = ::getenv("PRINT_CHANGED") ?: "";
 }
 
 int main(int argc, char* argv[])

@@ -45,7 +45,7 @@ class IndexPP : public clang::PPCallbacks
         }
         else
         {
-          LOG_INFO << "reenter file " << file_changed;
+          LOG_TRACE << "reenter file " << file_changed;
         }
       }
       else
@@ -129,6 +129,11 @@ class IndexPP : public clang::PPCallbacks
   {
     std::string mainFile = filePath(sourceManager_.getMainFileID());
     LOG_INFO << __FUNCTION__ << " " << mainFile;
+    if (preprocessor_.getDiagnostics().hasErrorOccurred())
+    {
+      LOG_ERROR << "stop";
+      return;
+    }
     if (sink_ == nullptr)
       return;
 

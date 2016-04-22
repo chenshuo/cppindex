@@ -30,7 +30,10 @@ class Sink : boost::noncopyable
   {
     if (out_)
       ::fclose(out_);
+    printf("~Sink count %d max_key %s value_len %d\n", count_, max_key_.c_str(), max_value_);
   }
+
+  int count() const { return count_; }
 
   void writeOrDie(const string& key, const string& value)
   {
@@ -38,6 +41,7 @@ class Sink : boost::noncopyable
     {
       leveldb::Status s = db_->Put(leveldb::WriteOptions(), key, value);
       assert(s.ok());
+      printf("write %s %zd\n", key.c_str(), value.size());
     }
     else
     {
@@ -52,12 +56,20 @@ class Sink : boost::noncopyable
       fwrite(value.data(), 1, value.size(), out_);
       }
     }
-    printf("write %s %zd\n", key.c_str(), value.size());
+    ++count_;
+    if (value.size() > max_value_)
+    {
+      max_key_ = key;
+      max_value_ = value.size();
+    }
   }
 
  private:
   leveldb::DB* db_ = nullptr;
   FILE* out_ = nullptr;
+  int count_ = 0;
+  string max_key_;
+  int max_value_ = 0;
 };
 
 class Reader : boost::noncopyable
@@ -125,4 +137,41 @@ private:
   long size_;
 };
 
+template<typename MSG>
+inline void parseAndPrint(const string& content)
+{
+  MSG msg;
+  if (msg.ParseFromString(content))
+  {
+    printf("%s", msg.DebugString().c_str());
+  }
+}
+
+inline void print(leveldb::Slice key, const string& content)
+{
+  if (key.starts_with("src:"))
+  {
+    printf("%s", content.c_str());
+  }
+  else if (key.starts_with("main:"))
+  {
+    parseAndPrint<indexer::proto::CompilationUnit>(content);
+  }
+  else if (key.starts_with("digests:"))
+  {
+    parseAndPrint<indexer::proto::Digests>(content);
+  }
+  else if (key.starts_with("functions:"))
+  {
+    parseAndPrint<indexer::proto::Functions>(content);
+  }
+  else if (key.starts_with("prep:"))
+  {
+    parseAndPrint<indexer::proto::Preprocess>(content);
+  }
+  else
+  {
+    printf("don't know how to print %s\n", key.data());
+  }
+}
 

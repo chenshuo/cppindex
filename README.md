@@ -8,6 +8,11 @@ Writing indexing tool is like writing linker, main job is resolving symbols.
   * Macro
   * Function
 
+## Known bugs
+* weak symbols
+  Two global functions defined, one is weak, the strong version should take precedence and mark the weak one as declaration.
+  eg. `skb_copy_bits` in `kernel/bpf/core.c`.
+
 ## TODO
 * Go to definition
   * Type

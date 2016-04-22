@@ -242,6 +242,11 @@ class IndexConsumer : public clang::ASTConsumer
   {
     LOG_INFO << "HandleTranslationUnit";
     assert(&sourceManager_ == &context.getSourceManager());
+    if (preprocessor_.getDiagnostics().hasErrorOccurred())
+    {
+      LOG_ERROR << "stop";
+      return;
+    }
 
     Visitor visitor(context);
     visitor.TraverseDecl(context.getTranslationUnitDecl());

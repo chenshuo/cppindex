@@ -39,6 +39,7 @@ enum StorageClass {
   kNone = 0;
   kExtern = 1;
   kStatic = 2;
+  kWeak = 3;
 }
 
 enum Usage {
