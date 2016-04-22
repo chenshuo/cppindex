@@ -4,10 +4,26 @@
   text-align: right;
 }
 .macro-use {
-  color:red;
+  color: #800;
 }
 .macro-def {
-  color:blue;
+  color: #080;
+}
+
+
+a {
+  text-decoration: none ;
+}
+a:link {
+  color: #000080 ;
+}
+a:link:hover, a:visited:hover {
+  background-color: #ccf ;
+  color: #008 ;
+  border-radius: 4px ;
+}
+a:link:active, a:visited:active {
+  color: red ;
 }
 
 :target {
