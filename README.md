@@ -3,6 +3,8 @@
 Indexing means cross referencing, find definition and all usages of any functions.
 Writing indexing tool is like writing linker, main job is resolving symbols.
 
+![](pipeline.dot.png)
+
 ## Features implemented
 * Go to definition
   * Macro
