@@ -9,8 +9,8 @@ Writing indexing tool is like writing linker, main job is resolving symbols.
   * Function
 
 ## Known bugs
-* weak symbols
-  Two global functions defined, one is weak, the strong version should take precedence and mark the weak one as declaration.
+* Weak symbols: 
+  two global functions defined, one is weak, the strong version should take precedence and mark the weak one as declaration.
   eg. `skb_copy_bits` in `kernel/bpf/core.c`.
 
 ## TODO
@@ -25,6 +25,13 @@ Writing indexing tool is like writing linker, main job is resolving symbols.
   * Function
   * Type
   * Field
+* Refinement
+  * canonical file path: `./include/header.h` to `include/header.h`, `bin/../lib/header` to `lib/header`
+  * symbolic link
+* Output
+  * directory navigation
+  * file overview
+  * mirror directory of source code
 
 ## No plan to support C++, yet
 Use other tools to index your C++ projects:
