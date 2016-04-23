@@ -260,12 +260,11 @@ class IndexConsumer : public clang::ASTConsumer
   Sink* sink_;
 };
 
-class IndexAction : public clang::PluginASTAction
+class IndexAction : public clang::ASTFrontendAction
 {
  protected:
-  clang::ASTConsumer *CreateASTConsumer(
-      clang::CompilerInstance& compiler,
-      clang::StringRef inputFile) override
+  clang::ASTConsumer *CreateASTConsumer(clang::CompilerInstance& compiler,
+                                        clang::StringRef inputFile) override
   {
     LOG_INFO << "IndexAction ctor " << inputFile.str();
     sink_.reset(new Sink(getOutput(inputFile.str()).c_str()));
@@ -287,13 +286,6 @@ class IndexAction : public clang::PluginASTAction
   ~IndexAction()
   {
     LOG_INFO << "IndexAction dtor";
-  }
-
-  bool ParseArgs(const clang::CompilerInstance &CI,
-                 const std::vector<std::string> &arg) override
-  {
-    printf("ParseArgs %zd\n", arg.size());
-    return true;
   }
 
  private:
