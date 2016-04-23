@@ -4,18 +4,21 @@
   text-align: right;
 }
 .macro-use {
-  color: #800;
+  color: #a00;
 }
 .macro-def {
   color: #080;
 }
 
+.func-def {
+  color: #080;
+}
 
 a {
   text-decoration: none ;
 }
 a:link {
-  color: #000080 ;
+  color: #00a ;
 }
 a:link:hover, a:visited:hover {
   background-color: #ccf ;

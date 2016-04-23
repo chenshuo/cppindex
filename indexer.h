@@ -294,7 +294,7 @@ class IndexAction : public clang::ASTFrontendAction
      string out = input + ".cindex";
      std::transform(out.begin(), out.end(), out.begin(),[](char ch)
                     { return ch == '/' ? '_' : ch; });
-     return "tmp/" + out;
+     return "tmp/" + out;  // FIXME: change to cindex/
   }
 
   std::unique_ptr<Sink> sink_;

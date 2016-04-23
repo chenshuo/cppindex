@@ -11,6 +11,9 @@
 
 #include <stdio.h>
 
+namespace indexer
+{
+
 class Formatter
 {
   std::unique_ptr<leveldb::DB> db_;
@@ -71,7 +74,7 @@ class Formatter
     leveldb::Status s = db_->Get(leveldb::ReadOptions(), "prep:" + filename, &content);
     if (!s.ok())
       return;
-    indexer::proto::Preprocess pp;
+    proto::Preprocess pp;
     if (!pp.ParseFromString(content))
       assert(0);
     assert(filename == pp.filename());
@@ -110,17 +113,24 @@ class Formatter
     leveldb::Status s = db_->Get(leveldb::ReadOptions(), "functions:" + filename, &content);
     if (!s.ok())
       return;
-    indexer::proto::Functions functions;
+    proto::Functions functions;
     if (!functions.ParseFromString(content))
       assert(0);
     assert(filename == functions.filename());
     for (const auto& func : functions.functions())
     {
-      if (!func.name_range().anchor() && func.ref_file_size() == 1 && func.ref_lineno_size() == 1)
+      if (func.name_range().anchor())
+        continue;
+      if (func.ref_file_size() == 1 && func.ref_lineno_size() == 1)
       {
         rb->InsertTextBefore(func.name_range().begin().offset(),
                              makeHref(func.ref_file().Get(0), func.ref_lineno().Get(0)));
         rb->InsertTextAfter(func.name_range().end().offset(), "</a>");
+      }
+      else if (func.usage() == proto::kDefine)
+      {
+        rb->InsertTextBefore(func.name_range().begin().offset(), R"(<span class="func-def">)");
+        rb->InsertTextAfter(func.name_range().end().offset(), "</span>");
       }
     }
 
@@ -184,8 +194,9 @@ class Formatter
     // FIXME: last line without EOL
     return lines;
   }
-
 };
+
+}  // namespace indexer
 
 std::string escapeHtml(const std::string& text)
 {
@@ -222,7 +233,7 @@ int main(int argc, char* argv[])
   leveldb::Status status = leveldb::DB::Open(options, "testdb", &db);
   if (status.ok())
   {
-    Formatter fmt(db);
+    indexer::Formatter fmt(db);
 
     if (argc > 1)
     {

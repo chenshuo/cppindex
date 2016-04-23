@@ -16,7 +16,7 @@ Writing indexing tool is like writing linker, main job is resolving symbols.
 ## TODO
 * Go to definition
   * Type
-  * Field
+  * Field, also link `sk_port` in `sk->sk_prot->init(sk)` to `__sk_common.skc_prot` not macro `sk_port`
 * Inline
   * macro expansion, with formatting
   * Enum member
@@ -27,7 +27,7 @@ Writing indexing tool is like writing linker, main job is resolving symbols.
   * Field
 * Refinement
   * canonical file path: `./include/header.h` to `include/header.h`, `bin/../lib/header` to `lib/header`
-  * symbolic link
+  * header file using symbolic link
 * Output
   * directory navigation
   * file overview
