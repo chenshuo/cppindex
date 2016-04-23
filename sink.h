@@ -65,7 +65,7 @@ class Sink : boost::noncopyable
   }
 
  private:
-  leveldb::DB* db_ = nullptr;
+  leveldb::DB* db_ = nullptr;  // not owned
   FILE* out_ = nullptr;
   int count_ = 0;
   string max_key_;
@@ -153,7 +153,7 @@ inline void print(leveldb::Slice key, const string& content)
   {
     printf("%s", content.c_str());
   }
-  else if (key.starts_with("main:"))
+  else if (key.starts_with("main:") || key == "inc:")
   {
     parseAndPrint<indexer::proto::CompilationUnit>(content);
   }

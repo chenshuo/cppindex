@@ -1,3 +1,6 @@
+#include "build/record.pb.h"
+
+#include "llvm/Support/MD5.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/FrontendActions.h"
@@ -5,7 +8,10 @@
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Tooling/Tooling.h"
 
-#include "muduo/base/Logging.h"
+#include "leveldb/db.h"
+
+#include <boost/noncopyable.hpp>
+
 #include <iostream>
 #include <iomanip>
 #include <set>
@@ -14,6 +20,84 @@ namespace indexer
 {
 using namespace clang;
 using std::string;
+#include "sink.h"
+
+class CommonHeader
+{
+ public:
+  CommonHeader()
+  {
+    leveldb::Options options;
+    options.create_if_missing = true;
+    leveldb::DB* db;
+    leveldb::Status status = leveldb::DB::Open(options, "testdb", &db);
+    assert (status.ok());
+    db_.reset(db);
+  }
+
+  void save(const std::set<string>& seen)
+  {
+    auto common= merge(seen);
+    std::cout << common.size() << " common headers\n";
+    proto::CompilationUnit cu;
+    for (const string& file : common)
+    {
+      cu.add_files(file);
+    }
+    Sink sink(db_.get());
+    sink.writeOrDie("inc:", cu.SerializeAsString());
+  }
+
+ private:
+  bool load(proto::CompilationUnit* cu)
+  {
+    std::string content;
+    leveldb::Status s = db_->Get(leveldb::ReadOptions(), "inc:", &content);
+    if (s.ok())
+    {
+      return cu->ParseFromString(content);
+    }
+    else
+    {
+      return false;
+    }
+  }
+
+  std::set<string> merge(const std::set<string>& seen)
+  {
+    proto::CompilationUnit cu;
+
+    if (load(&cu))
+    {
+      std::set<string> common;
+      /*
+      if (cu.files().size() < seen.size() / 10)
+      {
+        for (const string& file : cu.files())
+        {
+          if (seen.find(file) != seen.end())
+          {
+            common.insert(file);
+          }
+        }
+      }
+      else
+      */
+      {
+        std::set_intersection(seen.begin(), seen.end(),
+                              cu.files().begin(), cu.files().end(),
+                              std::inserter<>(common, common.end()));
+      }
+      return common;
+    }
+    else
+    {
+      return seen;
+    }
+  }
+
+  std::unique_ptr<leveldb::DB> db_;
+};
 
 /// \brief This interface provides a way to observe the actions of the
 /// preprocessor as it does its thing.
@@ -212,6 +296,8 @@ class IncludePPCallbacks : public clang::PPCallbacks
       std::cout << file << "\n";
     }
     std::cout << "\n";
+    CommonHeader ch;
+    ch.save(seen_files_);
   }
 
 #if 0

@@ -17,7 +17,7 @@ message CompilationUnit
   optional string main_file = 1;
   // defined functions
   repeated Function functions = 2;
-  //repeated string
+  repeated string files = 3;
 }
 
 message Functions {

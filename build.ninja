@@ -55,5 +55,5 @@ build a.out: link $builddir/indexer.o $builddir/record.pb.o
 build b.out: single joiner.cc $builddir/record.pb.o
 build c.out: single printer.cc $builddir/record.pb.o
 build d.out: single dump.cc $builddir/record.pb.o
-build e.out: single inc.cc
+build e.out: single inc.cc $builddir/record.pb.o
   cflags = $cflags -fno-rtti
