@@ -60,20 +60,6 @@ public:
     return true;
   }
 
-  bool VisitCallExprNOTUSED(clang::CallExpr *expr)
-  {
-    const clang::FunctionDecl* func = expr->getDirectCallee();
-    if (!func)
-      return true;
-    printf("CallExpr %p callee %p func %p", expr, expr->getCalleeDecl(), func);
-    if (expr->getCalleeDecl() != func)
-      printf(" =====******");
-    printf(" %s %s\n",
-           func ? func->getNameAsString().c_str() : NULL,
-           getMangledName(func).c_str());
-    return true;
-  }
-
   bool VisitStmt(const clang::Stmt* stmt)
   {
     //printf("stmt \n");

@@ -57,3 +57,5 @@ build c.out: single printer.cc $builddir/record.pb.o
 build d.out: single dump.cc $builddir/record.pb.o
 build e.out: single inc.cc $builddir/record.pb.o
   cflags = $cflags -fno-rtti
+build f.out: single visitor.cc
+  cflags = $cflags -fno-rtti

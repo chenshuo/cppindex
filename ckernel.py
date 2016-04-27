@@ -16,7 +16,7 @@ def process(line):
     if obj.split('/')[0] not in ['init', 'net', 'mm', 'fs', 'kernel']:
         return
     command = m.group(3)
-    command = I.sub('-isystem /usr/lib/clang/3.5.0/include ', command)  # match getBuiltinHeaders in index.cc
+    command = I.sub('-isystem /usr/lib/clang/3.5.2/include ', command)  # match getBuiltinHeaders in index.cc
     command = command.replace('-no-integrated-as', '').replace('=\#s', '=#s')
     print os.path.expanduser('~/git/cppindex/a.out ') + command + ' || exit'
 
