@@ -179,10 +179,10 @@ class Joiner
       assert(cu.main_file() == input.first);
       FunctionMap staticFunctions = getStaticFunctions(cu, globalFunctions);
 
-      // for each "functions:" in this CU
-      for (auto file = entries.lower_bound("functions:"); file != entries.end(); ++file)
+      // for each "file:" in this CU
+      for (auto file = entries.lower_bound("file:"); file != entries.end(); ++file)
       {
-        if (!leveldb::Slice(file->first).starts_with("functions:"))
+        if (!leveldb::Slice(file->first).starts_with("file:"))
           break;
 
         crossReferenceFunctions(globalFunctions, cu.main_file(), staticFunctions, file);
@@ -204,11 +204,11 @@ class Joiner
   void crossReferenceFunctions(FunctionMap& globalFunctions, const string cu,
                                FunctionMap& staticFunctions, Entries::iterator file)
   {
-    proto::Functions functions;
-    CHECK(functions.ParseFromString(file->second));
-    assert(file->first.substr(strlen("functions:")) == functions.filename());
+    proto::SourceFile sourceFile;
+    CHECK(sourceFile.ParseFromString(file->second));
+    assert(file->first.substr(strlen("file:")) == sourceFile.filename());
     // for each function in file
-    for (proto::Function& func : *functions.mutable_functions())
+    for (proto::Function& func : *sourceFile.mutable_functions())
     {
       if (func.usage() == proto::kDefine)
       {
@@ -233,14 +233,14 @@ class Joiner
           else
           {
             std::cout << "undefined static function " << func.ShortDebugString()
-                      << " IN " << functions.filename()
+                      << " IN " << sourceFile.filename()
                       << " CU " << cu << "\n";
           }
           it = globalFunctions.find(func.name());
           if (it != globalFunctions.end())
           {
             std::cout << "global function hidden by static: "<< func.name()
-                      << " IN " << functions.filename()
+                      << " IN " << sourceFile.filename()
                       << " CU " << cu << "\n"
                       << "    DEF " << it->second.ShortDebugString() << "\n"
                       << "    USE " << func.ShortDebugString() << "\n";
@@ -278,7 +278,7 @@ class Joiner
     }
     // printf("resolved functions for %s\n%s\n", cu->first.c_str(),
     //        functions.DebugString().c_str());
-    file->second = functions.SerializeAsString();
+    file->second = sourceFile.SerializeAsString();
   }
 
   void foundDefine(proto::Function* func, proto::Function* define)
@@ -292,7 +292,7 @@ class Joiner
   void merge()
   {
     Entries sources;
-    Entries functions;
+    Entries files;
     Entries preprocess;
     Entries mains;
     // key is file name
@@ -311,9 +311,9 @@ class Joiner
           key.remove_prefix(4); // "src:"
           md5s[key.ToString()] = md5String(entry.second);
         }
-        else if (key.starts_with("functions:"))
+        else if (key.starts_with("file:"))
         {
-          update(&functions, entry);
+          update(&files, entry);
         }
         else if (key.starts_with("prep:"))
         {
@@ -346,7 +346,7 @@ class Joiner
     {
       sink.writeOrDie(it.first, it.second);
     }
-    for (const auto& it : functions)
+    for (const auto& it : files)
     {
       sink.writeOrDie(it.first, it.second);
     }

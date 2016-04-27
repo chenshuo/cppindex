@@ -174,10 +174,10 @@ public:
   {
     proto::CompilationUnit cu;
     cu.set_main_file(util_.filePathOrDie(sourceManager_.getMainFileID()));
-    for (const auto& it : functions_)
+    for (const auto& it : files_)
     {
       assert(it.first == it.second.filename());
-      std::string uri = "functions:" + it.first;
+      std::string uri = "file:" + it.first;
       sink->writeOrDie(uri, it.second.SerializeAsString());
       for (const auto& func : it.second.functions())
       {
@@ -248,11 +248,11 @@ public:
       string file = util_.filePathOrDie(fileLoc);
       if (func.usage() == proto::kDefine)
         range.set_filename(file);
-      if (functions_.find(file) == functions_.end())
-        functions_[file].set_filename(file);
+      if (files_.find(file) == files_.end())
+        files_[file].set_filename(file);
 
       *func.mutable_range() = range;
-      *functions_[file].add_functions() = func;
+      *files_[file].add_functions() = func;
     }
   }
 
@@ -268,8 +268,8 @@ public:
   std::unique_ptr<clang::MangleContext> mangle_;
   const Util util_;
   std::unordered_map<const clang::NamedDecl*, clang::Decl::Kind> decls_;
-  // map from filename to functions
-  std::map<std::string, proto::Functions> functions_;
+  // map from filename to files
+  std::map<std::string, proto::SourceFile> files_;
 };
 
 class IndexConsumer : public clang::ASTConsumer

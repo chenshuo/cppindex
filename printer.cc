@@ -110,14 +110,14 @@ class Formatter
   void formatFunctions(const std::string& filename, clang::RewriteBuffer* rb)
   {
     std::string content;
-    leveldb::Status s = db_->Get(leveldb::ReadOptions(), "functions:" + filename, &content);
+    leveldb::Status s = db_->Get(leveldb::ReadOptions(), "file:" + filename, &content);
     if (!s.ok())
       return;
-    proto::Functions functions;
-    if (!functions.ParseFromString(content))
+    proto::SourceFile file;
+    if (!file.ParseFromString(content))
       assert(0);
-    assert(filename == functions.filename());
-    for (const auto& func : functions.functions())
+    assert(filename == file.filename());
+    for (const auto& func : file.functions())
     {
       if (func.range().anchor())
         continue;

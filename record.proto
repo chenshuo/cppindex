@@ -15,14 +15,15 @@ message Digests {
 message CompilationUnit
 {
   optional string main_file = 1;
+  repeated string files = 2;
   // defined functions
-  repeated Function functions = 2;
-  repeated string files = 3;
+  repeated Function functions = 3;
 }
 
-message Functions {
+message SourceFile {
   optional string filename = 1;
   repeated Function functions = 2;
+  repeated Struct structs = 3;
 }
 
 ////////////////////////////////////////////////////////////
@@ -75,6 +76,7 @@ message Struct {
   repeated string ref_file = 6;
   repeated int32 ref_lineno = 7;
 }
+
 ////////////////////////////////////////////////////////////
 
 message Preprocess {

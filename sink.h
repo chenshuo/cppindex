@@ -161,9 +161,9 @@ inline void print(leveldb::Slice key, const string& content)
   {
     parseAndPrint<indexer::proto::Digests>(content);
   }
-  else if (key.starts_with("functions:"))
+  else if (key.starts_with("file:"))
   {
-    parseAndPrint<indexer::proto::Functions>(content);
+    parseAndPrint<indexer::proto::SourceFile>(content);
   }
   else if (key.starts_with("prep:"))
   {
