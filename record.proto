@@ -53,7 +53,7 @@ message Function {
   optional string name = 1;
   optional string mangled = 2;
   optional string signature = 3;
-  optional Range name_range = 4;
+  optional Range range = 4;
   optional bool macro = 5;
   optional Usage usage = 6;
   optional StorageClass storage_class = 7;
@@ -66,6 +66,15 @@ message Function {
   // optional int32 decl_lineno = 11;
 }
 
+message Struct {
+  optional string name = 1;
+  optional int32 size = 2;
+  optional Range range = 3;
+  optional bool macro = 4;
+  optional Usage usage = 5;
+  repeated string ref_file = 6;
+  repeated int32 ref_lineno = 7;
+}
 ////////////////////////////////////////////////////////////
 
 message Preprocess {

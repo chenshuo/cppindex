@@ -49,9 +49,10 @@ struct Util
     if (start.isFileID())
     {
       string spelling = getSpelling(start);
-      if (spelling != name)
+      if (!name.empty() && spelling != name)
       {
         printf("spell=%s name=%s\n", spelling.c_str(), name.c_str());
+        abort();
       }
 
       clang::SourceLocation end = clang::Lexer::getLocForEndOfToken(

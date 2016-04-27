@@ -119,18 +119,18 @@ class Formatter
     assert(filename == functions.filename());
     for (const auto& func : functions.functions())
     {
-      if (func.name_range().anchor())
+      if (func.range().anchor())
         continue;
       if (func.ref_file_size() == 1 && func.ref_lineno_size() == 1)
       {
-        rb->InsertTextBefore(func.name_range().begin().offset(),
+        rb->InsertTextBefore(func.range().begin().offset(),
                              makeHref(func.ref_file().Get(0), func.ref_lineno().Get(0)));
-        rb->InsertTextAfter(func.name_range().end().offset(), "</a>");
+        rb->InsertTextAfter(func.range().end().offset(), "</a>");
       }
       else if (func.usage() == proto::kDefine)
       {
-        rb->InsertTextBefore(func.name_range().begin().offset(), R"(<span class="func-def">)");
-        rb->InsertTextAfter(func.name_range().end().offset(), "</span>");
+        rb->InsertTextBefore(func.range().begin().offset(), R"(<span class="func-def">)");
+        rb->InsertTextAfter(func.range().end().offset(), "</span>");
       }
     }
 

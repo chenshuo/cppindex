@@ -7,8 +7,8 @@ Writing indexing tool is like writing linker, main job is resolving symbols.
 
 ## Features implemented
 * Go to definition
-  * Macro
-  * Function
+  * macro
+  * function
 
 ## Known bugs
 * Weak symbols: 
@@ -17,16 +17,18 @@ Writing indexing tool is like writing linker, main job is resolving symbols.
 
 ## TODO
 * Go to definition
-  * Type
-  * Field, also link `sk_port` in `sk->sk_prot->init(sk)` to `__sk_common.skc_prot` not macro `sk_port`
+  * struct
+  * enum
+  * field, also link `sk_port` in `sk->sk_prot->init(sk)` to `__sk_common.skc_prot` not macro `sk_port`
 * Inline
   * macro expansion, with formatting
-  * Enum member
-  * Field type
+  * struct size
+  * enum member
+  * field type
 * Find all reference
-  * Function
-  * Type
-  * Field
+  * function
+  * type
+  * field
 * Refinement
   * canonical file path: `./include/header.h` to `include/header.h`, `bin/../lib/header` to `lib/header`
   * header file using symbolic link

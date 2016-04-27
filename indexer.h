@@ -76,6 +76,8 @@ public:
     }
 
     Location usage = decl->getLocation();
+    if (usage.isMacroID())
+      printf("in marco\n");
     if (decl->isAnonymousStructOrUnion())
     {
       printf("anonymous\n");
@@ -84,16 +86,11 @@ public:
       llvm::errs() << "\n";
       return true;
     }
+    addDecl(decl);
     if (!decl->getDeclName())
     {
-      printf("unnamed\n");
-      fflush(stdout);
-      usage.dump(sourceManager_);
-      llvm::errs() << "\n";
+      printf("unnamed ");
     }
-    addDecl(decl);
-    if (usage.isMacroID())
-      printf("in marco\n");
     // if it's a define, record it anyways
     // if it's a usage, record it anyways
     // discard a declaration with no location
@@ -186,8 +183,8 @@ public:
       {
         if (func.usage() == proto::kDefine)
         {
-          // func.mutable_name_range().set_filename(it.first);
-          assert(func.name_range().filename() == it.first);
+          // func.mutable_range().set_filename(it.first);
+          assert(func.range().filename() == it.first);
           *cu.add_functions() = func;
         }
       }
@@ -254,7 +251,7 @@ public:
       if (functions_.find(file) == functions_.end())
         functions_[file].set_filename(file);
 
-      *func.mutable_name_range() = range;
+      *func.mutable_range() = range;
       *functions_[file].add_functions() = func;
     }
   }

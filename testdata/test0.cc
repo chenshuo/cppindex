@@ -20,6 +20,42 @@ struct data* return_data(void)
   return &gd;
 }
 
+struct decl_only;
+struct decl_only* gdo;
+void set_gdo(struct decl_only* x)
+{
+  gdo = x;
+}
+
+struct {
+  int x, y;
+} unname;
+
+typedef struct {
+  int a;
+} unnamed_t;
+
+typedef struct name {
+  int value;
+} name_t;
+
+unnamed_t* use_unname(name_t* arg)
+{
+  unname.x = 12;
+  unnamed_t un;
+  un.a = 34;
+  name_t nn;
+  nn.value = 56;
+  return 0;
+}
+
+enum Gender
+{
+  kMale, kFemale
+};
+
+void use_enum(enum Gender x);
+
 static void foo();
 
 int

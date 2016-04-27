@@ -285,8 +285,8 @@ class Joiner
   {
     assert(func->ref_file_size() == 0);
     assert(func->ref_lineno_size() == 0);
-    func->add_ref_file(define->name_range().filename());
-    func->add_ref_lineno(define->name_range().begin().lineno());
+    func->add_ref_file(define->range().filename());
+    func->add_ref_lineno(define->range().begin().lineno());
   }
 
   void merge()

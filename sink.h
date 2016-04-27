@@ -69,7 +69,7 @@ class Sink : boost::noncopyable
   FILE* out_ = nullptr;
   int count_ = 0;
   string max_key_;
-  int max_value_ = 0;
+  unsigned max_value_ = 0;
 };
 
 class Reader : boost::noncopyable
