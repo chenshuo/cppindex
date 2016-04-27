@@ -1,10 +1,10 @@
 
 struct Util
 {
-  clang::SourceManager& sourceManager_;
+  const clang::SourceManager& sourceManager_;
   const clang::LangOptions& langOpts_;
 
-  Util(clang::SourceManager& sourceManager, const clang::LangOptions& langOpts)
+  Util(const clang::SourceManager& sourceManager, const clang::LangOptions& langOpts)
     : sourceManager_(sourceManager), langOpts_(langOpts)
   {
   }
@@ -38,9 +38,9 @@ struct Util
 
   string getSpelling(clang::SourceLocation start) const
   {
-      llvm::SmallVector<char, 32> buffer;
-      llvm::StringRef tokenSpelling = clang::Lexer::getSpelling(start, buffer, sourceManager_, langOpts_);
-      return tokenSpelling.str();
+    llvm::SmallVector<char, 32> buffer;
+    llvm::StringRef tokenSpelling = clang::Lexer::getSpelling(start, buffer, sourceManager_, langOpts_);
+    return tokenSpelling.str();
   }
 
   bool setNameRange(const string& name, clang::SourceLocation start, proto::Range* range) const
@@ -49,7 +49,10 @@ struct Util
     if (start.isFileID())
     {
       string spelling = getSpelling(start);
-      assert(spelling == name);
+      if (spelling != name)
+      {
+        printf("spell=%s name=%s\n", spelling.c_str(), name.c_str());
+      }
 
       clang::SourceLocation end = clang::Lexer::getLocForEndOfToken(
           start, 0, sourceManager_, langOpts_);

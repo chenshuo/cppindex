@@ -36,9 +36,10 @@ class Visitor : public clang::RecursiveASTVisitor<Visitor>
   typedef clang::SourceLocation Location;
 public:
   explicit Visitor(clang::ASTContext& context)
-    : mangle_(context.createMangleContext()),
+    : context_(context),
       sourceManager_(context.getSourceManager()),
       langOpts_(context.getLangOpts()),
+      mangle_(context.createMangleContext()),
       util_(sourceManager_, langOpts_)
   {
   }
@@ -57,6 +58,71 @@ public:
   {
     assert(decl->getLocation().isValid());
     addFunction(decl);
+    return true;
+  }
+
+  bool VisitRecordDecl(const clang::RecordDecl* decl)
+  {
+    printf("RecordDecl %p %s ", decl,
+           decl->getNameAsString().c_str());
+
+    if (decl->isCompleteDefinition())
+    {
+      printf("define size=%zd\n", context_.getTypeSize(context_.getRecordType(decl))/8);
+    }
+    else
+    {
+      printf("declare %p\n", decl->getDefinition());
+    }
+
+    Location usage = decl->getLocation();
+    if (decl->isAnonymousStructOrUnion())
+    {
+      printf("anonymous\n");
+      fflush(stdout);
+      usage.dump(sourceManager_);
+      llvm::errs() << "\n";
+      return true;
+    }
+    if (!decl->getDeclName())
+    {
+      printf("unnamed\n");
+      fflush(stdout);
+      usage.dump(sourceManager_);
+      llvm::errs() << "\n";
+    }
+    addDecl(decl);
+    if (usage.isMacroID())
+      printf("in marco\n");
+    // if it's a define, record it anyways
+    // if it's a usage, record it anyways
+    // discard a declaration with no location
+    proto::Range range;
+    if (util_.setNameRange(decl->getName().str(), usage, &range))
+    {
+      printf("%s\n", range.ShortDebugString().c_str());
+    }
+
+    return true;
+  }
+
+  bool VisitRecordType(clang::RecordType* type)
+  {
+    // printf("RecordType %p\n", type->getDecl());
+    return true;
+  }
+
+  bool VisitRecordTypeLoc(clang::RecordTypeLoc TL)
+  {
+    llvm::errs() << "RecordTypeLoc " << TL.getDecl();
+    //TL.getSourceRange().getBegin().dump(sourceManager_);
+    //llvm::errs() << " ~ ";
+    //TL.getSourceRange().getEnd().dump(sourceManager_);
+    // fflush(stdout);
+    llvm::errs() << " nameLoc=";
+    TL.getNameLoc().dump(sourceManager_);
+    llvm::errs() << "\n";
+
     return true;
   }
 
@@ -145,7 +211,7 @@ public:
     return "";
   }
 
-  // is usage is Invalid, it's a define or declare, otherwise a use.
+  // if usage is Invalid, it's a define or declare, otherwise a use.
   void addFunction(const clang::FunctionDecl* decl, Location usage = Location())
   {
     assert(decl->getDeclName());
@@ -199,9 +265,10 @@ public:
     decls_[decl] = decl->getKind();
   }
 
-  std::unique_ptr<clang::MangleContext> mangle_;
-  clang::SourceManager& sourceManager_;
+  const clang::ASTContext& context_;
+  const clang::SourceManager& sourceManager_;
   const clang::LangOptions& langOpts_;
+  std::unique_ptr<clang::MangleContext> mangle_;
   const Util util_;
   std::unordered_map<const clang::NamedDecl*, clang::Decl::Kind> decls_;
   // map from filename to functions
