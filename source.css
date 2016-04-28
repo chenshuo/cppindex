@@ -9,7 +9,9 @@
 .macro-def {
   color: #080;
 }
-
+.struct-def {
+  color: #080;
+}
 .func-def {
   color: #080;
 }

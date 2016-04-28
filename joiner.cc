@@ -111,6 +111,8 @@ class Joiner
         LOG_INFO << "global function used once " << func.second.DebugString();
       }
     }
+
+    resolveStructs();
   }
 
   FunctionMap getGlobalFunctions()
@@ -287,6 +289,11 @@ class Joiner
     assert(func->ref_lineno_size() == 0);
     func->add_ref_file(define->range().filename());
     func->add_ref_lineno(define->range().begin().lineno());
+  }
+
+  void resolveStructs()
+  {
+    // FIXME
   }
 
   void merge()

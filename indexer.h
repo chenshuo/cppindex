@@ -63,43 +63,8 @@ public:
 
   bool VisitRecordDecl(const clang::RecordDecl* decl)
   {
-    printf("RecordDecl %p %s ", decl,
-           decl->getNameAsString().c_str());
-
-    if (decl->isCompleteDefinition())
-    {
-      printf("define size=%zd\n", context_.getTypeSize(context_.getRecordType(decl))/8);
-    }
-    else
-    {
-      printf("declare %p\n", decl->getDefinition());
-    }
-
-    Location usage = decl->getLocation();
-    if (usage.isMacroID())
-      printf("in marco\n");
-    if (decl->isAnonymousStructOrUnion())
-    {
-      printf("anonymous\n");
-      fflush(stdout);
-      usage.dump(sourceManager_);
-      llvm::errs() << "\n";
-      return true;
-    }
-    addDecl(decl);
-    if (!decl->getDeclName())
-    {
-      printf("unnamed ");
-    }
-    // if it's a define, record it anyways
-    // if it's a usage, record it anyways
-    // discard a declaration with no location
-    proto::Range range;
-    if (util_.setNameRange(decl->getName().str(), usage, &range))
-    {
-      printf("%s\n", range.ShortDebugString().c_str());
-    }
-
+    assert(decl->getLocation().isValid());
+    addStruct(decl);
     return true;
   }
 
@@ -109,17 +74,9 @@ public:
     return true;
   }
 
-  bool VisitRecordTypeLoc(clang::RecordTypeLoc TL)
+  bool VisitRecordTypeLoc(clang::RecordTypeLoc tl)
   {
-    llvm::errs() << "RecordTypeLoc " << TL.getDecl();
-    //TL.getSourceRange().getBegin().dump(sourceManager_);
-    //llvm::errs() << " ~ ";
-    //TL.getSourceRange().getEnd().dump(sourceManager_);
-    // fflush(stdout);
-    llvm::errs() << " nameLoc=";
-    TL.getNameLoc().dump(sourceManager_);
-    llvm::errs() << "\n";
-
+    addStruct(tl.getDecl(), tl.getNameLoc());
     return true;
   }
 
@@ -188,6 +145,10 @@ public:
           *cu.add_functions() = func;
         }
       }
+      for (const auto& st : it.second.structs())
+      {
+        // FIXME: add undefined structs
+      }
     }
     printf("CompilationUnit %d bytes %d public functions\n", cu.ByteSize(), cu.functions_size());
     // printf("%s\n", cu.DebugString().c_str());
@@ -238,6 +199,16 @@ public:
       usage = decl->getLocation();
     }
     if (usage.isMacroID()) func.set_macro(true);
+
+    if (!decl->isThisDeclarationADefinition())
+    {
+      const clang::FunctionDecl* def = nullptr;
+      if (decl->isDefined(def))
+      {
+        // FIXME: a definition is found in this CU
+      }
+    }
+
     // if it's a define, record it anyways
     // if it's a usage, record it anyways
     // discard a declaration with no location
@@ -253,6 +224,77 @@ public:
 
       *func.mutable_range() = range;
       *files_[file].add_functions() = func;
+    }
+  }
+
+  void setDefine(const clang::RecordDecl* decl, proto::Struct* st)
+  {
+    assert(st->ref_file_size() == 0);
+    assert(st->ref_lineno_size() == 0);
+    if (clang::RecordDecl* def = decl->getDefinition())
+    {
+      // printf("found def for struct\n");
+      clang::SourceLocation defLoc = def->getLocation();
+      assert(defLoc.isValid());
+      clang::SourceLocation fileLoc = sourceManager_.getFileLoc(defLoc);
+      st->add_ref_file(util_.filePathOrDie(fileLoc));
+      proto::Location line;
+      util_.sourceLocationToLocation(fileLoc, &line);
+      st->add_ref_lineno(line.lineno());
+    }
+  }
+
+  // if usage is Invalid, it's a define or declare, otherwise a use.
+  void addStruct(const clang::RecordDecl* decl, Location usage = Location())
+  {
+    if (!decl->getDeclName())
+    {
+      // FIXME: unnamed struct, like
+      // typedef struct { int x, y; } point_t;
+      return;
+    }
+    proto::Struct st;
+    st.set_name(decl->getName().str());
+
+    if (usage.isValid())
+    {
+      st.set_usage(proto::kUse);
+      setDefine(decl, &st);
+    }
+    else
+    {
+      // a declaration or definition
+      if (decl->isCompleteDefinition())
+      {
+        st.set_usage(proto::kDefine);
+        st.set_size(context_.getTypeSize(context_.getRecordType(decl))/8);
+      }
+      else
+      {
+        st.set_usage(proto::kDeclare);
+        setDefine(decl, &st);
+      }
+
+      addDecl(decl);
+      usage = decl->getLocation();
+    }
+    if (usage.isMacroID()) st.set_macro(true);
+
+    // if it's a define, record it anyways
+    // if it's a usage, record it anyways
+    // discard a declaration with no location
+    proto::Range range;
+    if (util_.setNameRange(st.name(), usage, &range) || st.usage() != proto::kDeclare)
+    {
+      clang::SourceLocation fileLoc = sourceManager_.getFileLoc(usage);
+      string file = util_.filePathOrDie(fileLoc);
+      if (st.usage() == proto::kDefine)
+        range.set_filename(file);
+      if (files_.find(file) == files_.end())
+        files_[file].set_filename(file);
+
+      *st.mutable_range() = range;
+      *files_[file].add_structs() = st;
     }
   }
 

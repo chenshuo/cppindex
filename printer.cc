@@ -117,6 +117,7 @@ class Formatter
     if (!file.ParseFromString(content))
       assert(0);
     assert(filename == file.filename());
+
     for (const auto& func : file.functions())
     {
       if (func.range().anchor())
@@ -131,6 +132,24 @@ class Formatter
       {
         rb->InsertTextBefore(func.range().begin().offset(), R"(<span class="func-def">)");
         rb->InsertTextAfter(func.range().end().offset(), "</span>");
+      }
+    }
+
+    for (const auto& st : file.structs())
+    {
+      if (st.range().anchor())
+        continue;
+      if (st.ref_file_size() == 1 && st.ref_lineno_size() == 1)
+      {
+        rb->InsertTextBefore(st.range().begin().offset(),
+                             makeHref(st.ref_file().Get(0), st.ref_lineno().Get(0)));
+        rb->InsertTextAfter(st.range().end().offset(), "</a>");
+      }
+      else if (st.usage() == proto::kDefine)
+      {
+        // FIXME: add tooltip to show size
+        rb->InsertTextBefore(st.range().begin().offset(), R"(<span class="struct-def">)");
+        rb->InsertTextAfter(st.range().end().offset(), "</span>");
       }
     }
 

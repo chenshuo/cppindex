@@ -59,7 +59,7 @@ struct Util
           start, 0, sourceManager_, langOpts_);
       sourceLocationToLocation(start, range->mutable_begin());
       sourceLocationToLocation(end, range->mutable_end());
-      // assert [start, end] == name FIXME
+      // FIXME: assert [start, end] == name
       return true;
     }
     else
