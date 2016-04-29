@@ -5,11 +5,13 @@ void take_data(struct data* pd)
   gdp = pd;
 }
 
+struct page_frag { void* p; };
 struct data
 {
-  int x;
-  double y;
-  struct data* next;
+	int	x;
+	double	y;
+	struct data*		next;
+	struct page_frag	mib;
 };
 
 struct data gd;

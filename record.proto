@@ -67,14 +67,21 @@ message Function {
   // optional int32 decl_lineno = 11;
 }
 
+message Field {
+  optional string name = 1;
+  optional string type = 2;
+  optional int32 offset = 3;
+}
+
 message Struct {
   optional string name = 1;
-  optional int32 size = 2;
-  optional Range range = 3;
-  optional bool macro = 4;
-  optional Usage usage = 5;
-  repeated string ref_file = 6;
-  repeated int32 ref_lineno = 7;
+  optional Range range = 2;
+  optional int32 size = 3;
+  optional Field fields = 4;
+  optional bool macro = 5;
+  optional Usage usage = 6;
+  repeated string ref_file = 7;
+  repeated int32 ref_lineno = 8;
 }
 
 ////////////////////////////////////////////////////////////

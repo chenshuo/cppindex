@@ -43,7 +43,7 @@ class Formatter
     srcuri.remove_prefix(4); // "src:"
     std::string filename = srcuri.ToString();
     formatPreprocess(filename, &rb);
-    formatFunctions(filename, &rb);
+    formatFile(filename, &rb);
 
     int numlines = escapeHtml(text, &rb);
     std::vector<std::string> headers;
@@ -107,7 +107,7 @@ class Formatter
     }
   }
 
-  void formatFunctions(const std::string& filename, clang::RewriteBuffer* rb)
+  void formatFile(const std::string& filename, clang::RewriteBuffer* rb)
   {
     std::string content;
     leveldb::Status s = db_->Get(leveldb::ReadOptions(), "file:" + filename, &content);
@@ -189,6 +189,7 @@ class Formatter
   static int escapeHtml(leveldb::Slice text, clang::RewriteBuffer* rb)
   {
     int lines = 0;
+    int line_start = 0;
     for (size_t i = 0; i < text.size(); ++i)
     {
       switch (text[i])
@@ -205,8 +206,17 @@ class Formatter
           rb->ReplaceText(i, 1, "&amp;");
           break;
 
+        case '\t':
+          {
+            int column = i - line_start;
+            int spaces = 8 - (column-1) % 8;
+            rb->ReplaceText(i, 1, llvm::StringRef("        ", spaces));
+            line_start -= spaces-1;
+          }
+          break;
         case '\n':
           ++lines;
+          line_start = i;
           break;
       }
     }
